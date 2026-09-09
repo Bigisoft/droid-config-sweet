@@ -103,6 +103,14 @@ Requires: geoclue-provider-hybris
 # speaker amplifiers are silent - see sweet-audio-mixer-defaults.sh.
 Requires: alsa-utils
 
+
+# Bluetooth. bluebinder proxies BlueZ to the Android Bluetooth HAL over a
+# virtual HCI adapter; without it there is no adapter at all, only an
+# rfkill-blocked bt_power switch. It needs CONFIG_BT_HCIVHCI in the kernel for
+# /dev/vhci, and a Bluetooth address, which this device has nowhere to read -
+# see sparse/usr/bin/droid/droid-get-bt-address.sh.
+Requires: bluebinder
+
 %description -n patterns-sailfish-device-adaptation-sweet
 Pattern with packages for sweet HW Adaptation
 

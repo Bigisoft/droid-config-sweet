@@ -111,6 +111,15 @@ Requires: alsa-utils
 # see sparse/usr/bin/droid/droid-get-bt-address.sh.
 Requires: bluebinder
 
+
+# Flashlight. The shortcut needs both halves: the settings entry that draws it,
+# and a backend that can actually light the LED. droidmedia-flashlight calls
+# droid_media_camera_set_torch_mode(), so it only became installable once
+# droidmedia built against this Android 16 base. Without them the top menu has
+# no torch at all, even with Feature_BackCameraFlashlight declared.
+Requires: jolla-settings-system-flashlight
+Requires: droidmedia-flashlight
+
 %description -n patterns-sailfish-device-adaptation-sweet
 Pattern with packages for sweet HW Adaptation
 

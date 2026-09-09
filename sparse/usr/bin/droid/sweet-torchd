@@ -1,0 +1,104 @@
+#!/bin/sh
+# sweet: apply the torch level chosen in Settings to the camera flash LED.
+#
+# Why this exists
+# ---------------
+# The top-menu flashlight shortcut goes through droidmedia-flashlight, which
+# calls droid_media_camera_set_torch_mode() - an on/off call with no level,
+# mirroring Android's pre-13 CameraManager.setTorchMode(). Android only gained
+# a variable torch in 13, through camera2's turnOnTorchWithStrengthLevel(),
+# which droidmedia's HAL1-style client cannot reach.
+#
+# The hardware is not on/off. led:torch_0 accepts 0-500, and the range is an
+# order of magnitude of light: level 60 draws ~39 mA at the battery, level 500
+# draws ~464 mA.
+#
+# State model
+# -----------
+# One key: /desktop/sweet/torch/level. Zero means off, anything else is the
+# brightness. Deriving "is it on" from the level rather than keeping a separate
+# boolean means the two can never disagree - sliding to zero *is* switching off.
+#
+# Two quirks drive the rest:
+#
+#  1. Writing led:torch_0/brightness while the LED is already lit changes the
+#     attribute and nothing else. The value is only latched when led:switch_0
+#     is asserted, so changing brightness means dropping the switch, writing the
+#     level and raising the switch again. That round trip measures 0.23 ms, so
+#     doing it on every drag step is not visible.
+#
+#  2. The provider emits no PropertiesChanged and is D-Bus activated, exiting
+#     between calls, so there is nothing to subscribe to for "the shortcut just
+#     turned the torch on" - and polling sysfs on a phone costs wakeups all day
+#     for a feature used for seconds. So this does not try to follow the
+#     shortcut. The shortcut stays a quick on/off at the vendor default; this
+#     drives the LED itself, for when the level matters.
+#
+# Runs in the user session. It needs no privileges beyond the "camera" group,
+# which the UI user is already in - see 99-sweet-torch.rules.
+
+TORCH=/sys/class/leds/led:torch_0/brightness
+SWITCH=/sys/class/leds/led:switch_0/brightness
+DCONF_DIR=/desktop/sweet/torch
+
+# Keep a ceiling below the hardware maximum. 500 is ~464 mA into a small LED
+# with no thermal feedback in this path; the vendor's own default is 200.
+LEVEL_MAX=400
+LEVEL_MIN=20
+
+# Last value the driver actually accepted, so a bad one is ignored, not applied.
+LAST_GOOD_LEVEL=200
+
+read_key() {
+    v=$(dconf read "$DCONF_DIR/$1" 2>/dev/null)
+    # dconf prints uint32 values as "uint32 300"
+    printf '%s' "${v##* }"
+}
+
+apply() {
+    level=$(read_key level)
+
+    # dconf may hold a double - QML sliders write reals, and "330.0" is
+    # rejected outright by the LED driver. Take the integer part, then insist
+    # on digits only, so a malformed value can never reach sysfs.
+    level=${level%%.*}
+    case "$level" in
+        ''|*[!0-9]*) level=$LAST_GOOD_LEVEL ;;
+    esac
+
+    if [ "$level" -eq 0 ]; then
+        echo 0 > "$SWITCH" 2>/dev/null
+        return
+    fi
+
+    [ "$level" -gt "$LEVEL_MAX" ] && level=$LEVEL_MAX
+    [ "$level" -lt "$LEVEL_MIN" ] && level=$LEVEL_MIN
+    LAST_GOOD_LEVEL=$level
+
+    # Re-latch: the level is only sampled when the switch is asserted. Write
+    # the level first and check it took, so a rejected value can never leave
+    # the LED dark - that was the first version's bug.
+    echo 0 > "$SWITCH" 2>/dev/null
+    if ! echo "$level" > "$TORCH" 2>/dev/null; then
+        echo "sweet-torchd: refused level '$level', keeping previous" >&2
+    fi
+    echo 1 > "$SWITCH" 2>/dev/null
+}
+
+# Leave the LED as the HAL expects it if we are stopped, so the top-menu
+# shortcut still behaves normally afterwards.
+cleanup() {
+    echo 0 > "$SWITCH" 2>/dev/null
+    echo 200 > "$TORCH" 2>/dev/null
+    exit 0
+}
+trap cleanup INT TERM
+
+[ -w "$TORCH" ] || { echo "sweet-torchd: $TORCH not writable" >&2; exit 1; }
+
+apply
+dconf watch "$DCONF_DIR/" 2>/dev/null | while read -r line; do
+    case "$line" in
+        "$DCONF_DIR"/*) apply ;;
+    esac
+done

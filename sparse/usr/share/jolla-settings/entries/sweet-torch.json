@@ -1,0 +1,16 @@
+{
+    "entries": [
+        {
+            "path": "system_settings/look_and_feel/display/sweet_torch",
+            "title": "Flashlight brightness",
+            "type": "custom",
+            "icon": "image://theme/icon-m-flashlight",
+            "order": 280,
+            "params": {
+                "source": "/usr/share/jolla-settings/pages/sweet-torch/TorchBrightness.qml",
+                "type": "list",
+                "settings_path": "system_settings/look_and_feel/display"
+            }
+        }
+    ]
+}

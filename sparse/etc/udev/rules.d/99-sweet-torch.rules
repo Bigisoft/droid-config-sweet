@@ -1,0 +1,12 @@
+# sweet: let the UI adjust the camera flash brightness.
+#
+# The flashlight shortcut goes through droidmedia-flashlight, which calls
+# droid_media_camera_set_torch_mode() - an on/off call with no level, mirroring
+# Android's pre-13 CameraManager.setTorchMode(). The hardware is not on/off
+# though: led:torch_0 accepts 0-500 and the difference is an order of magnitude
+# of light (measured: level 60 draws ~39 mA, level 500 draws ~464 mA).
+#
+# Hand the two attributes to the "camera" group, which the UI user is already
+# in, so a settings page can drive them without any of this needing root.
+ACTION=="add|change", SUBSYSTEM=="leds", KERNEL=="led:torch_0", RUN+="/bin/sh -c '/bin/chgrp camera /sys%p/brightness && /bin/chmod 0664 /sys%p/brightness'"
+ACTION=="add|change", SUBSYSTEM=="leds", KERNEL=="led:switch_0", RUN+="/bin/sh -c '/bin/chgrp camera /sys%p/brightness && /bin/chmod 0664 /sys%p/brightness'"

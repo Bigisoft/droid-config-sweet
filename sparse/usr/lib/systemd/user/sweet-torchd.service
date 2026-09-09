@@ -1,0 +1,12 @@
+[Unit]
+Description=sweet: apply the Settings torch level to the camera flash LED
+After=user-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/droid/sweet-torchd
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=user-session.target

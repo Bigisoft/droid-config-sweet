@@ -53,7 +53,16 @@ Start at `droid-hal-sweet` for the manifest and build order.
 
 Working: display, touch, Wi-Fi, sensors, modem and both SIM slots, battery,
 app sandboxing, audio (speakers, headphones with jack detection, earpiece,
-ringtones, media).
+ringtones, media), microphone, and camera - stills confirmed on both the main
+and the front sensor, through droidmedia and `gstreamer1.0-droid`.
 
-Built but unverified: camera and hardware video decode, via droidmedia and
-`gstreamer1.0-droid`.
+Of the nine camera devices the HAL enumerates, seven open through `droidcamsrc`;
+devices 3 and 4 return `error 0x1 from camera HAL` and are almost certainly the
+depth and auxiliary sensors. Sailfish's camera app is limited to two of them by
+its own dconf configuration, not by anything in the pipeline.
+
+Not done: fingerprint. The hardware and the vendor service are present and
+running, but this device publishes the AIDL fingerprint HAL (V4) and no HIDL
+interface, while `sailfish-fpd-community` implements a HIDL client only.
+
+Untested: voice calls, video recording, and the speakerphone microphone path.

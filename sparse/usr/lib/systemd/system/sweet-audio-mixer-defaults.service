@@ -1,5 +1,5 @@
 [Unit]
-Description=sweet: MI2S link format for the Awinic speaker amplifiers
+Description=sweet: mixer wiring the 64-bit audio HAL cannot read from Xiaomi's overlay
 Requires=droid-hal-init.service
 After=droid-hal-init.service
 

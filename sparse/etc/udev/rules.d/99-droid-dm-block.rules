@@ -1,0 +1,4 @@
+# apexd refers to device-mapper devices as /dev/block/dm-N, the path Android's
+# ueventd creates. udev creates /dev/dm-N and /dev/mapper/<name> and no
+# /dev/block/dm-*, so apexd fails with "/dev/block/dm-0 is not a block device".
+SUBSYSTEM=="block", KERNEL=="dm-[0-9]*", SYMLINK+="block/%k"

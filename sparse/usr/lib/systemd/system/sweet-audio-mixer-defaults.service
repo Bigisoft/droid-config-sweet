@@ -1,0 +1,12 @@
+[Unit]
+Description=sweet: MI2S link format for the Awinic speaker amplifiers
+Requires=droid-hal-init.service
+After=droid-hal-init.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/droid/sweet-audio-mixer-defaults.sh
+
+[Install]
+WantedBy=multi-user.target

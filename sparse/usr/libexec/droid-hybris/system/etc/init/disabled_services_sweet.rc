@@ -1,0 +1,36 @@
+# Device-specific service stubs for sweet, on top of the ones droid-configs-device
+# ships in sparse-16/.../disabled_services.rc. Kept in a separate file on purpose:
+# our own sparse tree is copied last, so reusing the upstream filename would
+# replace that whole file instead of adding to it.
+#
+# init reads /usr/libexec/droid-hybris/system/etc/init before /system, /vendor and
+# the APEX init dirs (init.cpp LoadBootScripts), and service_parser.cpp ignores a
+# later duplicate definition that does not say "override" -- and refuses an APEX
+# override of a non-updatable service. So whatever is stubbed here wins.
+
+# odsign performs ART on-device signing of the boot classpath. A Sailfish port
+# runs no zygote and no Android framework, so there is nothing for it to sign:
+# on sweet it exits 1 immediately, and init then blocks forever on
+#   wait_for_prop odsign.key.done 1           (init.rc, post-fs-data)
+#   wait_for_prop odsign.verification.done 1  (init.rc, zygote-start)
+# Stub the service out and publish both properties so init walks past them.
+service odsign /system/bin/odsign_HYBRIS_DISABLED
+    override
+    disabled
+
+on early-init
+    setprop odsign.key.done 1
+    setprop odsign.verification.done 1
+
+# vendor.audio-hal is declared in /vendor/etc/init/hw/init.qcom.rc, which init.rc
+# imports very early -- before the /usr/libexec/droid-hybris/system/etc/init
+# directory scan. init keeps the FIRST definition, so the plain stub in
+# droid-configs-device's disabled_services.rc is discarded as a duplicate and the
+# Android audio HAL service starts anyway. It then holds the audio HAL, and
+# PulseAudio's module-droid-card cannot open a stream:
+#     droid-util.c: Failed to open output stream: -17   (-EEXIST)
+#     droid-sink.c: Failed to open output stream.
+# "override" makes this later definition replace the earlier one
+# (service_parser.cpp:704), which a bare duplicate cannot do.
+service vendor.audio-hal /vendor/bin/hw/android.hardware.audio.service_HYBRIS_DISABLED
+    override

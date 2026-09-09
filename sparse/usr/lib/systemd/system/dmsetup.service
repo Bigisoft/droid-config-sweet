@@ -1,0 +1,15 @@
+[Unit]
+Description=Setup dynamic partitions
+Before=system_root.mount system.mount system_ext.mount vendor.mount product.mount odm.mount local-fs.target systemd-modules-load.service droid-hal-init.service
+DefaultDependencies=no
+ConditionPathExists=!/dev/mapper/dynpart-system
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /usr/bin/droid/dmsetup.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=local-fs.target

@@ -1,0 +1,7 @@
+# apexd needs exclusive access to a loop device while it configures it. udev
+# probes every loop device with blkid (60-persistent-storage.rules matches
+# loop*), holding an open fd, so apexd's LOOP_SET_BLOCK_SIZE returns EAGAIN
+# ("Try again") and APEX activation fails. Android's ueventd does no probing.
+# Evidence: apexd activates every package when run from a shell with udev not
+# running, and fails during boot with udev running.
+SUBSYSTEM=="block", KERNEL=="loop[0-9]*", ENV{UDEV_DISABLE_PERSISTENT_STORAGE_RULES_FLAG}="1", OPTIONS+="nowatch"

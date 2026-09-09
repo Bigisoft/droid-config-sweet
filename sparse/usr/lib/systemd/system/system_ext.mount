@@ -1,0 +1,15 @@
+[Unit]
+Description=Droid mount for /system_ext
+Before=local-fs.target systemd-modules-load.service
+After=dmsetup.service
+Requires=dmsetup.service
+
+[Mount]
+What=/dev/mapper/dynpart-system_ext
+Where=/system_ext
+Type=ext4
+Options=ro,barrier=1,discard
+TimeoutSec=10
+
+[Install]
+WantedBy=local-fs.target

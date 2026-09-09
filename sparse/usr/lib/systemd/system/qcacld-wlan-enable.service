@@ -1,0 +1,22 @@
+[Unit]
+Description=Power on the qcacld-3.0 WLAN driver (creates wlan0)
+# qcacld-3.0 is built into this kernel (CONFIG_QCA_CLD_WLAN=y in
+# sdmsteppe-perf_defconfig) but comes up "closed": it registers only the
+# /dev/wlan control node and creates no netdev until userspace writes "ON" to it
+# -- see wlan_hdd_state_ctrl_param_write() in
+# drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_main.c, which compares the
+# first 3 bytes against "ON" / "OFF".
+# On Android the Wi-Fi HAL does this. Sailfish uses connman + wpa_supplicant,
+# which simply expect wlan0 to exist, so without this there is no wlan0 at all
+# and connman lists no wifi technology.
+After=droid-hal-init.service
+Before=connman.service network.target
+ConditionPathExists=/dev/wlan
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c "echo ON > /dev/wlan"
+
+[Install]
+WantedBy=multi-user.target

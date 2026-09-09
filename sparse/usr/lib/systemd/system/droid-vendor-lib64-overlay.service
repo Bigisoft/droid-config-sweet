@@ -1,0 +1,24 @@
+[Unit]
+Description=Overlay the 64-bit audio blobs missing from /vendor/lib64
+# LineageOS extracts only the 32-bit copies of libacdbloader.so and friends,
+# because the audio HAL it runs (android.hardware.audio.service) is 32-bit on
+# this device. PulseAudio is 64-bit, loads /vendor/lib64/hw/audio.primary.
+# sm6150.so, and that HAL then fails to dlopen libacdbloader.so - so no ACDB
+# calibration is ever pushed to the ADSP. Without it afe_get_cal_topology_id()
+# has nothing, AFE ports refuse to start (ADSP_EBADPARAM) and every output is
+# silent. The 64-bit blobs do exist in the device's own MIUI firmware; they are
+# shipped here and layered in read-only, ahead of the real /vendor/lib64.
+DefaultDependencies=no
+Requires=vendor.mount
+After=vendor.mount
+Before=droid-hal-init.service
+ConditionPathExists=/usr/libexec/droid-hybris/vendor/lib64/libacdbloader.so
+ConditionPathExists=!/vendor/lib64/libacdbloader.so
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mount -t overlay droid-vendor-lib64 -o ro,lowerdir=/usr/libexec/droid-hybris/vendor/lib64:/vendor/lib64 /vendor/lib64
+
+[Install]
+WantedBy=multi-user.target

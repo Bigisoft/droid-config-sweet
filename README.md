@@ -69,7 +69,11 @@ nothing to bind to. The fork linked above adds an AIDL backend behind the same
 `Fingerprint=1` in `hw-settings.ini`, which is what publishes
 `Feature_FingerprintSensor`, and swapping `jolla-devicelock-daemon-encsfa`
 for `sailfish-devicelock-fpd`, whose plugin is the only one that registers
-nemo-devicelock's `/fingerprint/sensor` object. Enrolment through Settings is
-still to be confirmed on hardware.
+nemo-devicelock's `/fingerprint/sensor` object.
+
+Confirmed working on the device: enrolling, naming, deleting and unlocking by
+fingerprint. Two deadlocks had to be cleared first, both of the same shape - a
+HAL callback must not do work that re-enters the HAL on the thread that
+delivered it. See FIX 18 in the port notes.
 
 Untested: voice calls, video recording, and the speakerphone microphone path.

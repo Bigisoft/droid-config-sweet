@@ -1,0 +1,27 @@
+# sweet: pick the right back camera.
+#
+# jolla-camera ships no deviceId default, so the app keeps whatever it last
+# used - and on this device it settled on camera 2, which is the 5 MP macro.
+# That looks like a broken main camera: it will not focus at normal distances
+# and everything is soft.
+#
+# The back sensors, identified by probing each id with droidcamsrc and
+# comparing the largest mode it offers (only the main sensor does 4K):
+#
+#   id 0  s5khm2   108 MP main    3840x2160 video   <- this one
+#   id 1  front
+#   id 2  ov5675     5 MP macro   2592x1944
+#   id 3  depth/aux                errors on open
+#
+# The sensor names come from /vendor/etc/camera - s5khm2, imx355 (8 MP
+# ultrawide) and ov5675 - alongside the CFR_para_W / _UW / _MARCO tuning
+# blobs. The ultrawide is present in hardware but its camera id does not open
+# through droidmedia; see the camera notes in sailfish-sweet-port.md.
+#
+# These are defaults only: a value the user has already chosen in the app wins,
+# which is why changing this on a device that has been used also needs a
+# dconf write for that user.
+[apps/jolla-camera]
+deviceId='0'
+previousBackFacingDeviceId='0'
+frontFacingDeviceId='1'

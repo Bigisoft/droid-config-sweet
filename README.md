@@ -17,6 +17,7 @@ port.
 | [droidmedia](https://github.com/Bigisoft/droidmedia/tree/sweet-android16) | `sweet-android16` | fork of `sailfishos/droidmedia` - builds against Android 16 |
 | [droid-hal-device](https://github.com/Bigisoft/droid-hal-device/tree/sweet) | `sweet` | fork of `mer-hybris/droid-hal-device` |
 | [android_kernel_xiaomi_sm6150](https://github.com/Bigisoft/android_kernel_xiaomi_sm6150/tree/sweet-sailfish) | `sweet-sailfish` | fork of `LineageOS/...` - defconfig |
+| [sailfish-fpd-community](https://github.com/Bigisoft/sailfish-fpd-community/tree/sweet-aidl) | `sweet-aidl` | fork of `sailfishos-open/...` - AIDL fingerprint backend |
 
 Start at `droid-hal-sweet` for the manifest and build order.
 
@@ -61,8 +62,14 @@ devices 3 and 4 return `error 0x1 from camera HAL` and are almost certainly the
 depth and auxiliary sensors. Sailfish's camera app is limited to two of them by
 its own dconf configuration, not by anything in the pipeline.
 
-Not done: fingerprint. The hardware and the vendor service are present and
-running, but this device publishes the AIDL fingerprint HAL (V4) and no HIDL
-interface, while `sailfish-fpd-community` implements a HIDL client only.
+Fingerprint: reachable. The device publishes the AIDL fingerprint HAL (V4) and
+no HIDL interface, so stock `sailfish-fpd-community` - a HIDL client - had
+nothing to bind to. The fork linked above adds an AIDL backend behind the same
+`libbiometry_fp_api` ABI. Two further gates had to be opened on this side:
+`Fingerprint=1` in `hw-settings.ini`, which is what publishes
+`Feature_FingerprintSensor`, and swapping `jolla-devicelock-daemon-encsfa`
+for `sailfish-devicelock-fpd`, whose plugin is the only one that registers
+nemo-devicelock's `/fingerprint/sensor` object. Enrolment through Settings is
+still to be confirmed on hardware.
 
 Untested: voice calls, video recording, and the speakerphone microphone path.

@@ -1,0 +1,46 @@
+#!/bin/sh
+# sweet: bounded replacement for the wait_for_keymint in droid-configs-device
+# sparse-16.
+#
+# Upstream loops until android.hardware.security.keymint.IKeyMintDevice/default
+# appears on /dev/binder, to hold the fingerprint daemon back until KeyMint is
+# up. On this device that loop can never end:
+#
+#   * there is no KeyMint. The vendor ships HIDL
+#     android.hardware.keymaster@4.1-service-qti and nothing registers the AIDL
+#     IKeyMintDevice interface, so the match never happens.
+#   * binder-list lives in libgbinder-tools, which was not installed. Every
+#     iteration printed "binder-list: not found" and the test then compared an
+#     empty string with an empty string - always true.
+#   * it orders itself Before=sailfish-fpd.service, but this port's daemon is
+#     sailfish-fpd-community.service, so it gated nothing anyway.
+#
+# Net effect was a shell waking once a second for the whole uptime and
+# achieving nothing. Keep the intent, bound the wait, accept the HIDL keymaster
+# as good enough, and use POSIX = rather than the bash ==.
+TIMEOUT=${WAIT_FOR_KEYMINT_TIMEOUT:-30}
+
+have_keymint() {
+    # AIDL KeyMint, if this device ever gains one.
+    if command -v binder-list >/dev/null 2>&1; then
+        if binder-list -d /dev/binder 2>/dev/null \
+             | grep -q "android.hardware.security.keymint.IKeyMintDevice/default"; then
+            return 0
+        fi
+    fi
+    # HIDL keymaster is what this device actually has; if its service is up,
+    # whatever needed a key store can proceed.
+    pidof android.hardware.keymaster@4.1-service-qti >/dev/null 2>&1
+}
+
+i=0
+while [ "$i" -lt "$TIMEOUT" ]; do
+    if have_keymint; then
+        exit 0
+    fi
+    i=$((i + 1))
+    sleep 1
+done
+
+echo "wait_for_keymint: no KeyMint or keymaster after ${TIMEOUT}s, continuing anyway" >&2
+exit 0

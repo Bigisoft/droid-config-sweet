@@ -124,6 +124,11 @@ Requires: geoclue-provider-hybris
 # speaker amplifiers are silent - see sweet-audio-mixer-defaults.sh.
 Requires: alsa-utils
 
+# binder-list, used by wait_for_keymint and invaluable when working out
+# which Android interfaces a HAL actually registers. Its absence is why the
+# stock wait_for_keymint spun for ever instead of waiting.
+Requires: libgbinder-tools
+
 
 # Bluetooth. bluebinder proxies BlueZ to the Android Bluetooth HAL over a
 # virtual HCI adapter; without it there is no adapter at all, only an

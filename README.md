@@ -19,6 +19,7 @@ port.
 | [android_kernel_xiaomi_sm6150](https://github.com/Bigisoft/android_kernel_xiaomi_sm6150/tree/sweet-sailfish) | `sweet-sailfish` | fork of `LineageOS/...` - defconfig |
 | [sailfish-fpd-community](https://github.com/Bigisoft/sailfish-fpd-community/tree/sweet-aidl) | `sweet-aidl` | fork of `sailfishos-open/...` - AIDL fingerprint backend |
 | [parse-android-dynparts](https://github.com/Bigisoft/parse-android-dynparts/tree/sweet) | `sweet` | fork of `ubports/...` - adds the RPM packaging it lacks |
+| [droid-hal-version](https://github.com/Bigisoft/droid-hal-version/tree/sweet) | `sweet` | fork of `mer-hybris/...` - hw-release keeps NAME on line 1 |
 
 Start at `droid-hal-sweet` for the manifest and build order.
 

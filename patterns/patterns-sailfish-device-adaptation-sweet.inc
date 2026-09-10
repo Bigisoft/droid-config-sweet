@@ -77,8 +77,29 @@ Requires: usb-moded
 # hammerhead, grouper, and maguro use this in scripts, so include for all
 Requires: rfkill
 
-# enable device lock and allow to select untrusted software
-Requires: jolla-devicelock-daemon-encsfa
+# Device lock, and with it the fingerprint.
+#
+# The default here is jolla-devicelock-daemon-encsfa, whose plugin has no
+# fingerprint support at all: nemo-devicelock then never registers the
+# /fingerprint/sensor object, Fingerprint.Sensor.hasSensor stays false, and
+# jolla-settings hides the whole Fingerprint section - which is what happened
+# on this port and looked like a broken sensor rather than a missing plugin.
+#
+# sailfish-devicelock-fpd is the variant upstream names for exactly this ("can
+# be used with sailfish-devicelock-fpd to add fingerprint support to community
+# ports"). It ships the encsfa-fpd plugin, which drives sailfish-fpd over
+# /org/sailfishos/fingerprint1, and it Provides jolla-devicelock-plugin-encsfa,
+# so it is a drop-in for the plugin half. It does *not* provide the -daemon-
+# package name, which is why this line has to change rather than just adding
+# one: requiring the old daemon by name is what kept the two apart.
+Requires: sailfish-devicelock-fpd
+
+# Fingerprint daemon and its Android backend. sailfish-fpd-community carries
+# this port's AIDL client (the vendor HAL is AIDL V4, HIDL is absent); it
+# Provides sailfish-fpd, which is what sailfish-devicelock-fpd and mce's
+# fingerprint.so both talk to.
+Requires: sailfish-fpd-community
+Requires: droid-biometry-fp
 
 # Enable home encryption
 #Requires: sailfish-device-encryption

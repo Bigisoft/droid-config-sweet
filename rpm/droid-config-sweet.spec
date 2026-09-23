@@ -55,8 +55,12 @@ Provides: ofono-configs
 # things any RPM should provide either, so keep rpm's dependency generator out
 # of that tree. droid-hal-device.inc does the same for its own droid-hybris
 # payload.
-%define __requires_exclude_from ^%{_libexecdir}/droid-hybris/.*$
-%define __provides_exclude_from ^%{_libexecdir}/droid-hybris/.*$
+# Also the mesa libraries shipped into /var/lib/waydroid/overlay: those are
+# *Android* binaries for the container, so rpm must not read their ELF NEEDED
+# entries and generate unsatisfiable deps on libnativewindow.so, libsync.so,
+# libm.so(LIBC) and friends - the package then cannot be installed at all.
+%define __requires_exclude_from ^(%{_libexecdir}/droid-hybris|/var/lib/waydroid/overlay)/.*$
+%define __provides_exclude_from ^(%{_libexecdir}/droid-hybris|/var/lib/waydroid/overlay)/.*$
 
 %include droid-configs-device/droid-configs.inc
 %include patterns/patterns-sailfish-device-adaptation-sweet.inc

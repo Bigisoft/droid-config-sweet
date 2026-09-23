@@ -1,0 +1,47 @@
+#!/usr/bin/python3
+# Create the renamed binder nodes Waydroid needs, the same way waydroid's own
+# drivers.py does it (BINDER_CTL_ADD on /dev/binderfs/binder-control), then
+# symlink them into /dev where the lxc config expects them.
+#
+# These live in binderfs and are recreated from nothing on every boot, so this
+# has to run before the container starts. Waydroid will not create them itself
+# on a hybris port: its MAINLINE branch loops the candidate names without a
+# break, so the last existing match wins, and the list ends with the plain name,
+# which always exists here because Sailfish's own Android HALs use /dev/binder.
+import fcntl, os, struct, sys
+
+NRBITS, TYPEBITS, SIZEBITS = 8, 8, 14
+NRSHIFT = 0
+TYPESHIFT = NRSHIFT + NRBITS
+SIZESHIFT = TYPESHIFT + TYPEBITS
+DIRSHIFT = SIZESHIFT + SIZEBITS
+READ, WRITE = 0x2, 0x1
+BINDER_CTL_ADD = ((READ | WRITE) << DIRSHIFT) | (98 << TYPESHIFT) | \
+                 (1 << NRSHIFT) | (264 << SIZESHIFT)
+
+CONTROL = "/dev/binderfs/binder-control"
+NODES = ["puddlejumper", "vndpuddlejumper", "hwpuddlejumper"]
+
+if not os.path.exists(CONTROL):
+    print("no binderfs at {}, nothing to do".format(CONTROL))
+    sys.exit(0)
+
+with open(CONTROL, "rb") as ctl:
+    for node in NODES:
+        try:
+            fcntl.ioctl(ctl.fileno(), BINDER_CTL_ADD,
+                        struct.pack("256sII", node.encode(), 0, 0))
+            print("created", node)
+        except FileExistsError:
+            print("exists", node)
+        except Exception as e:
+            print("FAILED", node, e)
+
+for node in NODES:
+    src, dst = "/dev/binderfs/" + node, "/dev/" + node
+    if os.path.exists(src):
+        if os.path.islink(dst) or os.path.exists(dst):
+            os.remove(dst)
+        os.symlink(src, dst)
+        os.chmod(src, 0o666)
+        print("linked", dst)

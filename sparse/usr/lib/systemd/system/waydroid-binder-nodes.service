@@ -1,0 +1,17 @@
+[Unit]
+Description=Create the renamed binder nodes Waydroid needs
+Documentation=https://github.com/Bigisoft/sailfish-sweet-port
+# binderfs nodes are recreated from nothing on every boot, and Waydroid will not
+# allocate them on a hybris port because /dev/binder always exists here. Without
+# this the container cannot start after a reboot.
+After=local-fs.target
+Before=waydroid-container.service
+ConditionPathExists=/dev/binderfs/binder-control
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/droid/waydroid-binder-nodes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+{
+    "entries": [
+        {
+            "path": "system_settings/system/sweet_charging",
+            "title": "Charging limits",
+            "type": "page",
+            "icon": "image://theme/icon-m-battery",
+            "order": 271,
+            "params": {
+                "source": "/usr/share/jolla-settings/pages/sweet-charging/ChargingLimits.qml"
+            }
+        }
+    ]
+}

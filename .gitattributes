@@ -1,0 +1,6 @@
+# Everything in this tree ends up on a Linux device. CRLF in a shell script or
+# systemd unit breaks it (#!/bin/sh\r), so force LF regardless of the
+# checkout platform.
+* text=auto eol=lf
+*.bin binary
+*.so binary

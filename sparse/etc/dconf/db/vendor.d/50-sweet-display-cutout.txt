@@ -15,4 +15,10 @@
 #   rect     x = 540-67.4 = 473, y = 142.3-67.4 = 75, w = h = 135
 # Format is a list of rectangles, each [x, y, width, height]; libsailfishsilica
 # rejects anything else with "Invalid display cutout rectangle".
+#
+# The group line matters: without it dconf rejects this file with "Key file
+# does not start with a group", and then refuses to compile the whole vendor
+# db, silently dropping every other file here too (the camera default in
+# 50-sweet-camera.txt among them). Silica reads /desktop/sailfish/silica/cutouts.
+[desktop/sailfish/silica]
 cutouts=[[473,75,135,135]]

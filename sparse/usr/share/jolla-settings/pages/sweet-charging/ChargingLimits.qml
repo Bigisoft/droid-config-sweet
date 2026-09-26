@@ -95,12 +95,19 @@ Page {
     // place that says whether a limit is holding charging off right now.
     property string chargingState: "unknown"
 
+    // Fuel gauge calibration, run by sweet-charge-calibration.timer (see
+    // /usr/bin/droid/sweet-charge-calibration for the why). While one is in
+    // progress mce holds the calibration's values, not the profile's.
+    readonly property bool calibrating: calPhase.value === "drain" || calPhase.value === "charge"
+    readonly property var intervalOptions: [14, 30, 60]
+
     // The profile shown as selected. The one picked last on this page, as long
-    // as mce still holds its values. If something else changed them (the stock
-    // Battery page, mcetool), whichever template matches, otherwise Custom.
+    // as mce still holds its values (or a calibration has them borrowed). If
+    // something else changed them (the stock Battery page, mcetool), whichever
+    // template matches, otherwise Custom.
     readonly property int activeIndex: {
         var last = profileIndexOf(lastProfile.value)
-        if (last === customIndex || (last >= 0 && matches(profiles[last])))
+        if (last === customIndex || (last >= 0 && (calibrating || matches(profiles[last]))))
             return last
         for (var i = 0; i < profiles.length; ++i) {
             if (matches(profiles[i]))
@@ -133,6 +140,96 @@ Page {
         id: customStop
         key: "/desktop/sweet/charging/custom_stop"
         defaultValue: -1
+    }
+
+    // Shared with sweet-charge-calibration. The defaults here must match the
+    // script's: enabled, every 30 days.
+    ConfigurationValue {
+        id: calEnabled
+        key: "/desktop/sweet/charging/calibration_enabled"
+        defaultValue: true
+    }
+
+    ConfigurationValue {
+        id: calInterval
+        key: "/desktop/sweet/charging/calibration_interval_days"
+        defaultValue: 30
+    }
+
+    // Unix seconds of the last completed calibration or natural full charge.
+    ConfigurationValue {
+        id: calLast
+        key: "/desktop/sweet/charging/calibration_last"
+        defaultValue: -1
+    }
+
+    // "", "drain" or "charge".
+    ConfigurationValue {
+        id: calPhase
+        key: "/desktop/sweet/charging/calibration_phase"
+        defaultValue: ""
+    }
+
+    // "<mcetool mode> <resume> <stop>", what the calibration will put back.
+    ConfigurationValue {
+        id: calSaved
+        key: "/desktop/sweet/charging/calibration_saved"
+        defaultValue: ""
+    }
+
+    function nowSeconds() {
+        return Math.floor(Date.now() / 1000)
+    }
+
+    function modeFromMcetool(name) {
+        if (name === "enable")
+            return BatteryStatus.EnableCharging
+        if (name === "disable")
+            return BatteryStatus.DisableCharging
+        if (name === "apply-thresholds-after-full")
+            return BatteryStatus.ApplyChargingThresholdsAfterFull
+        return BatteryStatus.ApplyChargingThresholds
+    }
+
+    // Ends a calibration from here. restoreSaved puts back what it borrowed
+    // (Stop); without it the caller is about to apply something new itself (a
+    // profile or an edit), which wins. Either way it counts as done, so the next
+    // one comes a full interval later rather than five minutes from now.
+    function endCalibration(restoreSaved) {
+        if (!calibrating)
+            return
+        var saved = String(calSaved.value).split(" ")
+        calPhase.value = ""
+        calSaved.value = ""
+        calLast.value = nowSeconds()
+        if (restoreSaved && saved.length === 3)
+            apply(modeFromMcetool(saved[0]), parseInt(saved[1]), parseInt(saved[2]))
+    }
+
+    // Runs the check right away instead of waiting for the timer.
+    function runCalibrationCheck() {
+        systemdManager.typedCall("StartUnit",
+                                 [{ "type": "s", "value": "sweet-charge-calibration.service" },
+                                  { "type": "s", "value": "replace" }])
+    }
+
+    function lastCalibrationText() {
+        if (calLast.value <= 0)
+            return "Not yet"
+        var days = Math.floor((nowSeconds() - calLast.value) / 86400)
+        if (days <= 0)
+            return "Today"
+        if (days === 1)
+            return "Yesterday"
+        return days + " days ago"
+    }
+
+    function calibrationPhaseText() {
+        if (calPhase.value === "drain")
+            return "Running from battery down to 12%, then charging to full"
+        if (calPhase.value === "charge")
+            return "Charging to full"
+        return ""
     }
 
     function profileIndexOf(key) {
@@ -198,6 +295,8 @@ Page {
     }
 
     function statusText() {
+        if (calibrating)
+            return "Calibrating: " + calibrationPhaseText().toLowerCase()
         if (!chargerConnected)
             return "On battery, charger not connected"
         if (chargingState === "disabled")
@@ -239,6 +338,7 @@ Page {
     }
 
     function selectProfile(index) {
+        endCalibration(false)
         if (index === customIndex) {
             if (customMode.value < 0) {
                 // First use: Custom starts as a copy of what is active now, in
@@ -260,6 +360,7 @@ Page {
     // Any hand edit below lands in Custom, so a template is never changed
     // behind the user's back and the edit is there to come back to.
     function saveAsCustom(mode, resume, stop) {
+        endCalibration(false)
         customMode.value = mode
         customResume.value = resume
         customStop.value = stop
@@ -288,6 +389,14 @@ Page {
         function charging_state_ind(state) {
             page.chargingState = state
         }
+    }
+
+    DBusInterface {
+        id: systemdManager
+        bus: DBus.SessionBus
+        service: "org.freedesktop.systemd1"
+        path: "/org/freedesktop/systemd1"
+        iface: "org.freedesktop.systemd1.Manager"
     }
 
     Component.onCompleted: {
@@ -464,6 +573,101 @@ Page {
                 description: "Ignore the limits until the battery is full or the charger "
                              + "is unplugged. The profile stays as it is."
                 onClicked: battery.chargingForced = !battery.chargingForced
+            }
+
+            SectionHeader {
+                text: "Calibration"
+            }
+
+            TextSwitch {
+                automaticCheck: false
+                checked: calEnabled.value === true
+                text: "Automatic calibration"
+                description: "The battery percentage is an estimate that drifts when "
+                             + "the battery stays in a narrow range, and the limits drift "
+                             + "with it. Now and then the phone runs one full charge to "
+                             + "correct it. With a Server profile it first runs from "
+                             + "battery down to about 12%, because that is the only way "
+                             + "the fuel gauge relearns the battery's capacity. Otherwise "
+                             + "it charges to full the next time the charger is in."
+                onClicked: {
+                    var enable = calEnabled.value !== true
+                    if (!enable)
+                        endCalibration(true)
+                    calEnabled.value = enable
+                }
+            }
+
+            ComboBox {
+                id: intervalCombo
+                visible: calEnabled.value === true
+                label: "How often"
+                value: intervalText(calInterval.value)
+
+                function intervalText(days) {
+                    if (days === 14)
+                        return "Every 2 weeks"
+                    if (days === 60)
+                        return "Every 2 months"
+                    return "Monthly"
+                }
+
+                Binding {
+                    target: intervalCombo
+                    property: "currentIndex"
+                    value: page.intervalOptions.indexOf(calInterval.value)
+                }
+
+                menu: ContextMenu {
+                    Repeater {
+                        model: page.intervalOptions
+                        MenuItem {
+                            text: intervalCombo.intervalText(modelData)
+                            onClicked: calInterval.value = modelData
+                        }
+                    }
+                }
+            }
+
+            DetailItem {
+                visible: calEnabled.value === true
+                label: "Last calibration"
+                value: lastCalibrationText()
+            }
+
+            DetailItem {
+                visible: calibrating
+                label: "In progress"
+                value: calibrationPhaseText()
+            }
+
+            Button {
+                visible: calEnabled.value === true && !calibrating && limitsApply
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Calibrate now"
+                onClicked: {
+                    calLast.value = 0
+                    runCalibrationCheck()
+                }
+            }
+
+            Button {
+                visible: calibrating
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Stop calibration"
+                onClicked: endCalibration(true)
+            }
+
+            Label {
+                visible: calEnabled.value === true && !calibrating && limitsApply
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * Theme.horizontalPageMargin
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeExtraSmall
+                color: Theme.secondaryHighlightColor
+                text: "Starts once the charger is connected and the battery is "
+                      + "between 15 and 45 C. Picking a profile ends a calibration "
+                      + "in progress."
             }
         }
 

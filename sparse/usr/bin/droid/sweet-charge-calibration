@@ -1,0 +1,210 @@
+#!/bin/bash
+# sweet: periodic fuel gauge calibration, driven by sweet-charge-calibration.timer.
+#
+# The PM6150 fuel gauge (qpnp-qg) does not measure the charge level, it
+# estimates it. Two things keep that estimate honest:
+#
+#  - a full charge, which re-anchors the percentage at a known point, and
+#  - capacity learning, which updates charge_full. With sweet's device tree
+#    that only runs when a charge *starts* between 10% and 15%
+#    (DEFAULT_CL_MIN/MAX_START_SOC in qpnp-qg.c, no override in
+#    sweet-sdmmagpie.dtsi), at 15-50 C, and continues until the charger
+#    terminates.
+#
+# A phone held at 40-50% by a charging limit gets neither, so the percentage
+# drifts and the limits drift with it. This runs one calibration per interval:
+#
+#  - server profiles (always plugged in): let the battery drain to ~12% with
+#    the cable attached, then charge uninterrupted until the kernel reports
+#    "Full". That is a full learning cycle.
+#  - anything else: charge to "Full" the next time the charger is in. No drain,
+#    so a phone plugged in overnight is never left short in the morning.
+#
+# mce's own "charge to 100% this time" override is not used for the final
+# stretch: mce ends it as soon as the displayed level reads 100, which can be
+# before the charger terminates, and interrupting the charge aborts learning.
+# Switching mce to "enable" and waiting for status "Full" avoids that.
+#
+# All policy stays with mce. This script only changes mce's mode and limits
+# through mcetool, saves what was set before, and puts it back afterwards.
+# State lives in dconf under /desktop/sweet/charging/, shared with the Settings
+# page (usr/share/jolla-settings/pages/sweet-charging/), which can also cancel
+# or restore a calibration itself.
+
+K=/desktop/sweet/charging
+# Overridable only so the phases can be tested off-device.
+PSY=${SWEET_CALIBRATION_PSY:-/sys/class/power_supply/battery}
+
+# Learning window is 10-15%; resume at 12 so charging starts inside it, and
+# let mce pause again at 14 in case this script is not around at that moment.
+DRAIN_RESUME=12
+DRAIN_PAUSE=14
+DRAIN_TIMEOUT=$((7 * 86400))
+CHARGE_TIMEOUT=$((10 * 86400))
+# Learning needs 15-50 C; stay a little inside that.
+MIN_TEMP=150
+MAX_TEMP=450
+
+log() { echo "sweet-charge-calibration: $*"; }
+
+# dconf prints strings quoted, non-default integer types with a prefix
+# ("uint32 300", "int64 ..."), and QML may have stored a whole number as a
+# double ("30.0"); reduce all of those to the bare value.
+get() {
+    local v
+    v=$(dconf read "$K/$1" 2>/dev/null)
+    case "$v" in
+    \'*) v=${v#\'}; v=${v%\'} ;;
+    int*\ *|uint*\ *|byte\ *|double\ *) v=${v#* } ;;
+    esac
+    case "$v" in
+    *[0-9].0) v=${v%.0} ;;
+    esac
+    echo "$v"
+}
+put_str() { dconf write "$K/$1" "'$2'"; }
+put_int() { dconf write "$K/$1" "$2"; }
+
+now=$(date +%s)
+
+status_text=$(mcetool 2>/dev/null)
+field() { echo "$status_text" | sed -n "s/^$1:[[:space:]]*\([^ ]*\).*/\1/p"; }
+mode=$(field "Charging mode")
+enable_limit=$(field "Charging enable limit")
+disable_limit=$(field "Charging disable limit")
+cable=$(field "Charger cable")
+
+if [ -z "$mode" ]; then
+    log "no charging state from mcetool, skipping"
+    exit 0
+fi
+
+capacity=$(cat "$PSY"/capacity 2>/dev/null)
+bstatus=$(cat "$PSY"/status 2>/dev/null)
+temp=$(cat "$PSY"/temp 2>/dev/null)
+case "$capacity" in
+''|*[!0-9]*)
+    log "cannot read battery capacity, skipping"
+    exit 0
+    ;;
+esac
+
+# Write both limits in an order that never leaves resume >= stop behind: mce
+# re-evaluates on every write and reads that as "charge to 100%".
+set_limits() {
+    if [ "$1" -lt "$disable_limit" ]; then
+        mcetool --set-charging-enable-limit="$1" --set-charging-disable-limit="$2"
+    else
+        mcetool --set-charging-disable-limit="$2" --set-charging-enable-limit="$1"
+    fi
+    enable_limit=$1
+    disable_limit=$2
+}
+
+restore() {
+    local saved m e d
+    saved=$(get calibration_saved)
+    read -r m e d <<< "$saved"
+    if [ -n "$m" ]; then
+        # Limits before mode, so a threshold mode acts on the right range at once.
+        [ -n "$e" ] && [ -n "$d" ] && set_limits "$e" "$d"
+        mcetool --set-charging-mode="$m"
+        log "restored $m $e-$d"
+    fi
+    put_str calibration_phase ""
+    put_str calibration_saved ""
+}
+
+enabled=$(get calibration_enabled)
+[ -z "$enabled" ] && enabled=true
+interval=$(get calibration_interval_days)
+[ -z "$interval" ] && interval=30
+last=$(get calibration_last)
+if [ -z "$last" ]; then
+    # First run after install: due in one day. This gauge has not been
+    # calibrated in a long time, so it should not wait a whole interval.
+    last=$((now - interval * 86400 + 86400))
+    put_int calibration_last "$last"
+fi
+phase=$(get calibration_phase)
+started=$(get calibration_started)
+[ -z "$started" ] && started=$now
+
+case "$phase" in
+"")
+    # Any full charge that happens anyway re-anchors the gauge, so it counts.
+    if [ "$bstatus" = "Full" ]; then
+        put_int calibration_last "$now"
+        exit 0
+    fi
+    [ "$enabled" = "true" ] || exit 0
+    [ $((now - last)) -ge $((interval * 86400)) ] || exit 0
+    [ "$cable" = "connected" ] || exit 0
+    # Only while a limit is in force; "enable" already charges to full.
+    case "$mode" in
+    apply-thresholds|apply-thresholds-after-full) ;;
+    *) exit 0 ;;
+    esac
+    if [ -n "$temp" ] && { [ "$temp" -lt $MIN_TEMP ] || [ "$temp" -gt $MAX_TEMP ]; }; then
+        log "due, but battery at $temp decidegC, waiting"
+        exit 0
+    fi
+
+    put_str calibration_saved "$mode $enable_limit $disable_limit"
+    put_int calibration_started "$now"
+    profile=$(get profile)
+    case "$profile" in
+    server|server_reserve)
+        if [ "$capacity" -le "$DRAIN_PAUSE" ]; then
+            mcetool --set-charging-mode=enable
+            put_str calibration_phase charge
+            log "started at $capacity%, already low enough: charging to full"
+        else
+            set_limits $DRAIN_RESUME $DRAIN_PAUSE
+            mcetool --set-charging-mode=apply-thresholds
+            put_str calibration_phase drain
+            log "started at $capacity%: draining to $DRAIN_RESUME%"
+        fi
+        ;;
+    *)
+        mcetool --set-charging-mode=enable
+        put_str calibration_phase charge
+        log "started at $capacity%: charging to full"
+        ;;
+    esac
+    ;;
+drain)
+    if [ "$cable" != "connected" ]; then
+        # Taken off the charger: a drain now would just be an ordinary
+        # discharge. Put things back and try again when it is plugged in.
+        log "charger removed while draining, postponing"
+        restore
+        exit 0
+    fi
+    if [ "$capacity" -le "$DRAIN_PAUSE" ]; then
+        mcetool --set-charging-mode=enable
+        put_str calibration_phase charge
+        log "reached $capacity%: charging to full"
+    elif [ $((now - started)) -gt $DRAIN_TIMEOUT ]; then
+        log "drain did not finish in 7 days, giving up until next interval"
+        restore
+        put_int calibration_last "$now"
+    fi
+    ;;
+charge)
+    if [ "$bstatus" = "Full" ]; then
+        log "charger terminated at $capacity%: calibration done"
+        restore
+        put_int calibration_last "$now"
+    elif [ $((now - started)) -gt $CHARGE_TIMEOUT ]; then
+        log "no full charge in 10 days, giving up until next interval"
+        restore
+        put_int calibration_last "$now"
+    fi
+    ;;
+*)
+    log "unknown phase '$phase', resetting"
+    restore
+    ;;
+esac
+exit 0

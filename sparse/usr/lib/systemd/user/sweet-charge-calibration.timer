@@ -1,0 +1,13 @@
+[Unit]
+Description=sweet: check every few minutes whether a battery calibration is due or in progress
+
+[Timer]
+# The script exits at once when nothing is due. During a calibration it has to
+# notice "reached the drain level" and "charger terminated" reasonably soon.
+OnBootSec=3min
+OnUnitActiveSec=5min
+# Not worth waking the phone for; let it batch with other wakeups.
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

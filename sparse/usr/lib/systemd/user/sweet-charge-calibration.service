@@ -1,0 +1,8 @@
+[Unit]
+Description=sweet: calibrate the battery fuel gauge when a calibration is due
+Documentation=file:///usr/bin/droid/sweet-charge-calibration
+After=user-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/droid/sweet-charge-calibration

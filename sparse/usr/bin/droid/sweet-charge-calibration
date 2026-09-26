@@ -1,5 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 # sweet: periodic fuel gauge calibration, driven by sweet-charge-calibration.timer.
+#
+# POSIX sh, not bash: on Sailfish /bin/bash is busybox ash
+# (busybox-symlinks-bash), so bash-only syntax such as <<< fails to parse.
 #
 # The PM6150 fuel gauge (qpnp-qg) does not measure the charge level, it
 # estimates it. Two things keep that estimate honest:
@@ -65,7 +68,9 @@ get() {
 put_str() { dconf write "$K/$1" "'$2'"; }
 put_int() { dconf write "$K/$1" "$2"; }
 
-now=$(date +%s)
+# Overridable only for tests: busybox runs its own date applet before any
+# stub on PATH, so a fake clock has to come in this way.
+now=${SWEET_CALIBRATION_NOW:-$(date +%s)}
 
 status_text=$(mcetool 2>/dev/null)
 field() { echo "$status_text" | sed -n "s/^$1:[[:space:]]*\([^ ]*\).*/\1/p"; }
@@ -104,7 +109,13 @@ set_limits() {
 restore() {
     local saved m e d
     saved=$(get calibration_saved)
-    read -r m e d <<< "$saved"
+    # "<mode> <resume> <stop>": split on purpose into this function's
+    # positional parameters.
+    # shellcheck disable=SC2086
+    set -- $saved
+    m=$1
+    e=$2
+    d=$3
     if [ -n "$m" ]; then
         # Limits before mode, so a threshold mode acts on the right range at once.
         [ -n "$e" ] && [ -n "$d" ] && set_limits "$e" "$d"

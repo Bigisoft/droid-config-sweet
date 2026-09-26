@@ -1,12 +1,17 @@
 #!/bin/bash
 # Off-device test of sparse/usr/bin/droid/sweet-charge-calibration.
 #
-# Stubs mcetool, dconf and date, fakes the battery sysfs directory, and walks
+# Stubs mcetool and dconf, fakes the clock through SWEET_CALIBRATION_NOW (busybox
+# runs its own date applet, so a PATH stub would be ignored), fakes the battery sysfs directory, and walks
 # the script through every phase. After every single mce write it checks that
 # resume < stop still holds, since mce reads the opposite as 'charge to 100%'.
 #
 # Run on any Linux host: bash tests/sweet-charge-calibration.test.sh sparse/usr/bin/droid/sweet-charge-calibration
 SCRIPT=$1
+# The phone's /bin/sh and /bin/bash are both busybox ash, so test under that by
+# default: GNU bash accepts syntax (like <<<) that fails to parse on the phone.
+SHELL_UNDER_TEST=${SHELL_UNDER_TEST:-busybox ash}
+$SHELL_UNDER_TEST -c true 2>/dev/null || { echo "cannot run '$SHELL_UNDER_TEST' (install busybox)"; exit 2; }
 T=/tmp/caltest; rm -rf $T; mkdir -p $T/bin $T/psy $T/dconf
 fail=0
 check() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1   ($2)"; fail=1; fi; }
@@ -56,7 +61,7 @@ key() { cat "$T/dconf$(echo /desktop/sweet/charging/$1 | tr / _)" 2>/dev/null; }
 setkey() { echo "$2" > "$T/dconf$(echo /desktop/sweet/charging/$1 | tr / _)"; }
 phase() { key calibration_phase | tr -d "'"; }
 st() { . $T/mce; echo "$mode $en $dis"; }
-run() { bash "$SCRIPT" >> $T/log 2>&1; }
+run() { SWEET_CALIBRATION_NOW=$(cat $T/now) $SHELL_UNDER_TEST "$SCRIPT" >> $T/log 2>&1; }
 DAY=86400
 NOW=2000000000; echo $NOW > $T/now
 

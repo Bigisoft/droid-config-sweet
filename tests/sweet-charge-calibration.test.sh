@@ -28,6 +28,7 @@ D=/tmp/caltest/dconf
 case "$1" in
 read)  f="$D$(echo "$2" | tr / _)"; [ -f "$f" ] && cat "$f" ;;
 write) echo "$3" > "$D$(echo "$2" | tr / _)" ;;
+reset) rm -f "$D$(echo "$2" | tr / _)" ;;
 esac
 EOF
 cat > $T/bin/mcetool <<'EOF'
@@ -65,10 +66,11 @@ run() { SWEET_CALIBRATION_NOW=$(cat $T/now) $SHELL_UNDER_TEST "$SCRIPT" >> $T/lo
 DAY=86400
 NOW=2000000000; echo $NOW > $T/now
 
-echo "== 1: first run schedules the first calibration one day out"
+echo "== 1: first run schedules the first calibration one day out, no fake last"
 mce connected apply-thresholds 40 50; bat 45 Discharging; setkey profile "'server'"
 run
-check "last set to now-29d" "[ \"$(key calibration_last)\" = \"$((NOW - 29*DAY))\" ]"
+check "next = now+1d" "[ \"$(key calibration_next)\" = \"$((NOW + DAY))\" ]"
+check "last not set" "[ -z \"$(key calibration_last)\" ]"
 check "no phase" "[ -z \"$(key calibration_phase)\" ]"
 check "mce untouched" "[ \"$(st)\" = 'apply-thresholds 40 50' ]"
 
@@ -92,11 +94,12 @@ echo "== 5: 100% displayed but not terminated yet: keeps charging"
 bat 100 Charging; run
 check "still charge" "[ \"$(key calibration_phase)\" = \"'charge'\" ]"
 
-echo "== 6: charger terminates: profile restored, last updated"
+echo "== 6: charger terminates: profile restored, last and next updated"
 bat 100 Full; NOW=$((NOW + 3600)); echo $NOW > $T/now; run
 check "phase cleared" "[ -z \"$(phase)\" ]"
 check "mce back to 40-50" "[ \"$(st)\" = 'apply-thresholds 40 50' ]"
 check "last = now" "[ \"$(key calibration_last)\" = \"$NOW\" ]"
+check "next = now+30d" "[ \"$(key calibration_next)\" = \"$((NOW + 30*DAY))\" ]"
 
 echo "== 7: daily profile: no drain, charge to full directly"
 NOW=$((NOW + 31*DAY)); echo $NOW > $T/now
@@ -108,13 +111,14 @@ bat 100 Full; run
 check "restored 75-80" "[ \"$(st)\" = 'apply-thresholds 75 80' ]"
 
 echo "== 8: server drain, charger pulled: restored, retried later"
-NOW=$((NOW + 31*DAY)); echo $NOW > $T/now; last_before=$(key calibration_last)
+NOW=$((NOW + 31*DAY)); echo $NOW > $T/now; last_before=$(key calibration_last); next_before=$(key calibration_next)
 mce connected apply-thresholds 50 60; bat 55 Discharging; setkey profile "'server_reserve'"
 run
 check "draining" "[ \"$(st)\" = 'apply-thresholds 12 14' ]"
 mce disconnected apply-thresholds 12 14; run
 check "restored 50-60" "[ \"$(st)\" = 'apply-thresholds 50 60' ]"
 check "last unchanged" "[ \"$(key calibration_last)\" = \"$last_before\" ]"
+check "next unchanged, retried when plugged in" "[ \"$(key calibration_next)\" = \"$next_before\" ]"
 
 echo "== 9: too hot: waits"
 mce connected apply-thresholds 50 60; bat 55 Discharging 470; run
@@ -135,15 +139,30 @@ check "last = now" "[ \"$(key calibration_last)\" = \"$NOW\" ]"
 
 echo "== 13: dconf quirks: typed and double values"
 NOW=$((NOW + 31*DAY)); echo $NOW > $T/now
-setkey calibration_interval_days "30.0"; setkey calibration_last "int64 $((NOW - 31*DAY))"
+setkey calibration_interval_days "30.0"; setkey calibration_next "int64 $((NOW - DAY))"
 mce connected apply-thresholds 40 50; bat 45 Discharging; setkey profile "'server'"
 run
 check "started despite typed values" "[ \"$(key calibration_phase)\" = \"'drain'\" ]"
 
 echo "== 14: drain timeout after 7 days"
-NOW=$((NOW + 8*DAY)); echo $NOW > $T/now; bat 30 Discharging; run
+NOW=$((NOW + 8*DAY)); echo $NOW > $T/now; bat 30 Discharging; last_before=$(key calibration_last); run
 check "restored" "[ \"$(st)\" = 'apply-thresholds 40 50' ]"
-check "postponed to next interval" "[ \"$(key calibration_last)\" = \"$NOW\" ]"
+check "postponed one interval" "[ \"$(key calibration_next)\" = \"$((NOW + 30*DAY))\" ]"
+check "a timeout is not a calibration" "[ \"$(key calibration_last)\" = \"$last_before\" ]"
+
+echo "== 15: upgrade from the first release: the back-dated last is dropped"
+dconf reset /desktop/sweet/charging/calibration_next
+setkey calibration_last "$((NOW - 29*DAY))"; bat 45 Discharging; run
+check "fake last removed" "[ -z \"$(key calibration_last)\" ]"
+check "next = now+1d" "[ \"$(key calibration_next)\" = \"$((NOW + DAY))\" ]"
+check "not started early" "[ -z \"$(phase)\" ]"
+
+echo "== 16: completion schedules by the configured interval"
+setkey calibration_interval_days 14; setkey calibration_next 0
+mce connected apply-thresholds 75 80; bat 60 Charging; setkey profile "'daily'"; run
+check "started when due" "[ \"$(phase)\" = charge ]"
+bat 100 Full; run
+check "next = now+14d" "[ \"$(key calibration_next)\" = \"$((NOW + 14*DAY))\" ]"
 
 echo "== limit ordering"
 check "no resume>=stop state after any write" "[ ! -s $T/violations ]"

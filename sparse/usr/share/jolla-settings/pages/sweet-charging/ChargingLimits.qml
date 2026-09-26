@@ -157,9 +157,18 @@ Page {
     }
 
     // Unix seconds of the last completed calibration or natural full charge.
+    // Only ever a real event: unset until the first one.
     ConfigurationValue {
         id: calLast
         key: "/desktop/sweet/charging/calibration_last"
+        defaultValue: -1
+    }
+
+    // Unix seconds when the next calibration is due; 0 means now. Unset until
+    // the script's first run, which schedules it one day out.
+    ConfigurationValue {
+        id: calNext
+        key: "/desktop/sweet/charging/calibration_next"
         defaultValue: -1
     }
 
@@ -193,15 +202,16 @@ Page {
 
     // Ends a calibration from here. restoreSaved puts back what it borrowed
     // (Stop); without it the caller is about to apply something new itself (a
-    // profile or an edit), which wins. Either way it counts as done, so the next
-    // one comes a full interval later rather than five minutes from now.
+    // profile or an edit), which wins. Nothing was calibrated, so the last
+    // calibration stays as it is; the next one is moved a full interval ahead
+    // rather than starting again five minutes from now.
     function endCalibration(restoreSaved) {
         if (!calibrating)
             return
         var saved = String(calSaved.value).split(" ")
         calPhase.value = ""
         calSaved.value = ""
-        calLast.value = nowSeconds()
+        calNext.value = nowSeconds() + calInterval.value * 86400
         if (restoreSaved && saved.length === 3)
             apply(modeFromMcetool(saved[0]), parseInt(saved[1]), parseInt(saved[2]))
     }
@@ -222,6 +232,28 @@ Page {
         if (days === 1)
             return "Yesterday"
         return days + " days ago"
+    }
+
+    function nextCalibrationText() {
+        if (calNext.value < 0)
+            return "In about a day"
+        var seconds = calNext.value - nowSeconds()
+        if (seconds <= 0)
+            return "Due, starts when the charger is connected"
+        var days = Math.floor(seconds / 86400)
+        if (days <= 0)
+            return "Today"
+        if (days === 1)
+            return "Tomorrow"
+        return "In " + days + " days"
+    }
+
+    // A new interval counts from the last real calibration, so shortening it
+    // can make one due, but never because of a calibration that did not happen.
+    function applyInterval(days) {
+        calInterval.value = days
+        if (calLast.value > 0)
+            calNext.value = calLast.value + days * 86400
     }
 
     function calibrationPhaseText() {
@@ -623,7 +655,7 @@ Page {
                         model: page.intervalOptions
                         MenuItem {
                             text: intervalCombo.intervalText(modelData)
-                            onClicked: calInterval.value = modelData
+                            onClicked: applyInterval(modelData)
                         }
                     }
                 }
@@ -633,6 +665,12 @@ Page {
                 visible: calEnabled.value === true
                 label: "Last calibration"
                 value: lastCalibrationText()
+            }
+
+            DetailItem {
+                visible: calEnabled.value === true && !calibrating
+                label: "Next calibration"
+                value: nextCalibrationText()
             }
 
             DetailItem {
@@ -646,7 +684,7 @@ Page {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Calibrate now"
                 onClicked: {
-                    calLast.value = 0
+                    calNext.value = 0
                     runCalibrationCheck()
                 }
             }

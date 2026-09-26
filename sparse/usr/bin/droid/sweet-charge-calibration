@@ -126,16 +126,41 @@ restore() {
     put_str calibration_saved ""
 }
 
+# A real calibration (or a natural full charge) happened now.
+completed() {
+    put_int calibration_last "$now"
+    put_int calibration_next $((now + interval * 86400))
+}
+
+# Given up without a result: try again one interval from now. calibration_last
+# stays as it is, since nothing was calibrated.
+postpone() {
+    put_int calibration_next $((now + interval * 86400))
+}
+
+# Scheduling state, two keys with one meaning each:
+#   calibration_last  when a calibration last completed (or a natural full
+#                     charge happened). Only ever a real event; unset until
+#                     the first one. The Settings page shows it.
+#   calibration_next  when the next calibration is due. Completion, Stop and
+#                     the timeouts move it one interval ahead, "Calibrate now"
+#                     sets it to 0, and changing the interval on the page
+#                     recomputes it from calibration_last.
 enabled=$(get calibration_enabled)
 [ -z "$enabled" ] && enabled=true
 interval=$(get calibration_interval_days)
 [ -z "$interval" ] && interval=30
-last=$(get calibration_last)
-if [ -z "$last" ]; then
+next=$(get calibration_next)
+if [ -z "$next" ]; then
     # First run after install: due in one day. This gauge has not been
     # calibrated in a long time, so it should not wait a whole interval.
-    last=$((now - interval * 86400 + 86400))
-    put_int calibration_last "$last"
+    #
+    # The first release kept only calibration_last and back-dated it to
+    # schedule this, so a value found here without calibration_next is not a
+    # real calibration: drop it rather than show it.
+    dconf reset "$K/calibration_last"
+    next=$((now + 86400))
+    put_int calibration_next "$next"
 fi
 phase=$(get calibration_phase)
 started=$(get calibration_started)
@@ -145,11 +170,11 @@ case "$phase" in
 "")
     # Any full charge that happens anyway re-anchors the gauge, so it counts.
     if [ "$bstatus" = "Full" ]; then
-        put_int calibration_last "$now"
+        completed
         exit 0
     fi
     [ "$enabled" = "true" ] || exit 0
-    [ $((now - last)) -ge $((interval * 86400)) ] || exit 0
+    [ "$now" -ge "$next" ] || exit 0
     [ "$cable" = "connected" ] || exit 0
     # Only while a limit is in force; "enable" already charges to full.
     case "$mode" in
@@ -199,18 +224,18 @@ drain)
     elif [ $((now - started)) -gt $DRAIN_TIMEOUT ]; then
         log "drain did not finish in 7 days, giving up until next interval"
         restore
-        put_int calibration_last "$now"
+        postpone
     fi
     ;;
 charge)
     if [ "$bstatus" = "Full" ]; then
         log "charger terminated at $capacity%: calibration done"
         restore
-        put_int calibration_last "$now"
+        completed
     elif [ $((now - started)) -gt $CHARGE_TIMEOUT ]; then
         log "no full charge in 10 days, giving up until next interval"
         restore
-        put_int calibration_last "$now"
+        postpone
     fi
     ;;
 *)

@@ -23,6 +23,14 @@ Requires: droid-hal-version-sweet
 Requires: ofono-binder-plugin
 Requires: ofono-binder-plugin-ext-qti
 
+# Mobile data. The vendor netmgrd looks up android.system.net.netd@1.1::INetd
+# and never finishes starting without it; qcrild then answers every
+# setupDataCall with status 4100 ("DSI init not yet completed"). hybris stubs
+# the real netd out, so ship Jolla's stand-in. Borrowed from
+# droid-config-sony-seine / -lena / -murray, which require it for the same
+# reason. See sparse/etc/sysconfig/dummy_netd for the binder device it needs.
+Requires: dummy_netd
+
 # Hybris packages
 Requires: libhybris-libEGL
 Requires: libhybris-libGLESv2

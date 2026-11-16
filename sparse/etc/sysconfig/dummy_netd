@@ -1,0 +1,8 @@
+# Overrides droid-configs-device/sparse-16, which sets --device=/dev/binder
+# (the AIDL netd of newer Android). This vendor's netmgrd is HIDL: it calls
+# android.system.net.netd@1.1::INetd::getService on /dev/hwbinder. With the
+# /dev/binder default it never sees netd, never creates
+# /dev/socket/netmgr/netmgr_connect_socket, and mobile data fails with 4100.
+# Verified on the device 2026-11-16: hwbinder instance -> socket appears,
+# data call succeeds.
+DUMMY_NETD_ARGS=--device=/dev/hwbinder

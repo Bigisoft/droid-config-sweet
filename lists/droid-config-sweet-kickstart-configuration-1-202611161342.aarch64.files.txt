@@ -1,0 +1,2 @@
+/usr/share/ssu/kickstart/attachment/sweet
+/usr/share/ssu/kickstart/pack/sweet/hybris

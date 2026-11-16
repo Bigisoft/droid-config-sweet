@@ -1,0 +1,29 @@
+--- a/utils/extract-headers.sh
++++ b/utils/extract-headers.sh
+@@ -210,7 +210,7 @@
+     system/core/include/cutils
+ 
+ extract_headers_to log \
+-    system/core/include/log
++    system/logging/liblog/include/log
+ 
+ extract_headers_to system \
+     system/core/include/system
+@@ -220,7 +220,7 @@
+         system/media/audio/include/system
+ 
+ extract_headers_to android \
+-    system/core/include/android
++    system/logging/liblog/include/android
+ 
+ check_header_exists bionic/libc/kernel/common/linux/sync.h && \
+     extract_headers_to linux \
+@@ -264,7 +264,7 @@
+         system/media/radio/include/system/radio_metadata.h
+ 
+ extract_headers_to private \
+-    system/core/include/private/android_filesystem_config.h \
++    system/core/libcutils/include/private/android_filesystem_config.h \
+     bionic/libc/private
+ 
+ check_header_exists frameworks/native/libs/nativewindow/include/android/native_window.h && \

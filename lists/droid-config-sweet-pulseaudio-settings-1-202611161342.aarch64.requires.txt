@@ -1,0 +1,10 @@
+pulseaudio >= 15.0
+pulseaudio-modules-droid >= 11.1.66
+pulseaudio-modules-nemo-mainvolume >= 11.1.24
+pulseaudio-modules-nemo-parameters >= 11.1.24
+pulseaudio-modules-nemo-stream-restore >= 11.1.24
+pulseaudio-policy-enforcement >= 11.1.35
+rpmlib(CompressedFileNames) <= 3.0.4-1
+rpmlib(FileDigests) <= 4.6.0-1
+rpmlib(PayloadFilesHavePrefix) <= 4.0-1
+rpmlib(PayloadIsZstd) <= 5.4.18-1

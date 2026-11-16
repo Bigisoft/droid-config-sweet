@@ -1,0 +1,8 @@
+/bin/sh
+dconf
+droid-config-sweet = 1-202611161342
+oneshot
+rpmlib(CompressedFileNames) <= 3.0.4-1
+rpmlib(FileDigests) <= 4.6.0-1
+rpmlib(PayloadFilesHavePrefix) <= 4.0-1
+rpmlib(PayloadIsZstd) <= 5.4.18-1

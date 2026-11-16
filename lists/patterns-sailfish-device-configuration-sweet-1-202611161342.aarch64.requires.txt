@@ -1,0 +1,12 @@
+geoclue-provider-mlsdb
+jolla-settings-accounts-extensions-3rd-party-all
+patterns-sailfish-cellular-apps
+patterns-sailfish-consumer-generic
+patterns-sailfish-device-adaptation-sweet
+patterns-sailfish-device-configuration-common-sweet
+patterns-sailfish-device-tools
+rpmlib(CompressedFileNames) <= 3.0.4-1
+rpmlib(FileDigests) <= 4.6.0-1
+rpmlib(PayloadFilesHavePrefix) <= 4.0-1
+rpmlib(PayloadIsZstd) <= 5.4.18-1
+sailfish-content-graphics-z1.5

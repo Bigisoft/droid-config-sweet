@@ -1,0 +1,44 @@
+alsa-utils
+bluebinder
+droid-biometry-fp
+droid-config-sweet-bluez5
+droid-config-sweet-flashing
+droid-config-sweet-policy-settings
+droid-config-sweet-preinit-plugin
+droid-config-sweet-pulseaudio-settings
+droid-config-sweet-sailfish
+droid-hal-sweet
+droid-hal-sweet-img-boot
+droid-hal-sweet-kernel-modules
+droid-hal-version-sweet
+droidmedia-flashlight
+dummy_netd
+geoclue-provider-hybris
+gstreamer1.0-droid
+hybris-libsensorfw-qt5
+jolla-settings-system-flashlight
+libgbinder-tools
+libhybris-libEGL
+libhybris-libGLESv2
+libhybris-libwayland-egl
+libngf-qt5-qtfeedback
+mce-plugin-libhybris
+ngfd-plugin-native-vibrator
+ofono-binder-plugin
+ofono-binder-plugin-ext-qti
+parse-android-dynparts
+pulseaudio-modules-droid
+pulseaudio-modules-droid-hidl
+qt5-plugin-generic-evdev
+qt5-qpa-hwcomposer-plugin
+qt5-qtmultimedia-plugin-mediaservice-gstmediacapture
+qt5-qtwayland-wayland_egl
+qtscenegraph-adaptation
+rfkill
+rpmlib(CompressedFileNames) <= 3.0.4-1
+rpmlib(FileDigests) <= 4.6.0-1
+rpmlib(PayloadFilesHavePrefix) <= 4.0-1
+rpmlib(PayloadIsZstd) <= 5.4.18-1
+sailfish-devicelock-fpd
+sailfish-fpd-community
+usb-moded

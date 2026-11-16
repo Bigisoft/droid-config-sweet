@@ -1,0 +1,16 @@
+/etc/bluez5/bluetooth/exclude.conf
+/etc/bluez5/bluetooth/input.conf
+/etc/bluez5/bluetooth/jolla.conf
+/etc/bluez5/bluetooth/main.conf
+/etc/bluez5/bluetooth/network.conf
+/etc/obexd/excludes/bluetooth:pcsuite
+/etc/obexd/noplugins/ftp
+/etc/obexd/noplugins/irmc
+/etc/obexd/noplugins/mas
+/etc/obexd/noplugins/syncevolution
+/etc/obexd/opp.conf
+/etc/obexd/pbap.conf
+/etc/obexd/root
+/etc/pulse/xpolicy.conf.d/bluez5.conf
+/etc/pulse/xpolicy.conf.d/bluez5_earpiece.conf
+/usr/lib/systemd/system/bluetooth.service.d/uhid.conf

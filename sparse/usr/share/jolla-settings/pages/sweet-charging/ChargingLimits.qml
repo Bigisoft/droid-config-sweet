@@ -18,12 +18,13 @@ import org.nemomobile.systemsettings 1.0
 // the values of the Custom profile, so that choosing Custom again restores
 // them instead of leaving whatever a template set.
 //
-// mce drives input_suspend on this device (etc/mce/61-sweet-charging.ini).
-// While charging is paused, the charger stops supplying the phone at all and it
-// runs from the battery with the cable attached, draining down to the resume
-// level. Holding the battery idle while the charger powers the phone would be
-// kinder to it, but the only nodes that could do that (charging_enabled,
-// battery_charging_enabled) were measured to have no effect on sweet.
+// mce drives charging_enabled on this device (etc/mce/61-sweet-charging.ini).
+// While charging is paused, the battery rests: the charger keeps powering the
+// phone and the battery neither charges nor discharges, measured at about
+// 0 mA. It only charges again if the battery drops to the resume level. The
+// one exception is the drain phase of a calibration on a Server profile,
+// where sweet-charge-drain (root) cuts the charger input on purpose and the
+// phone runs from the battery down to 12%.
 //
 // mce protects itself, so no setting here can hurt the phone. It clamps both
 // limits to 0-100, treats a pair where resume >= stop as "charge to 100%",
@@ -317,9 +318,9 @@ Page {
         if (mode === BatteryStatus.EnableCharging)
             return "Charge to 100% whenever a charger is connected."
         if (mode === BatteryStatus.ApplyChargingThresholds)
-            return "Stop charging at the upper limit. While paused, the phone runs from "
-                    + "the battery even with the cable attached, until the battery drops "
-                    + "to the lower limit."
+            return "Stop charging at the upper limit. While paused, the battery rests and "
+                    + "the phone runs from the charger. It only charges again if the battery "
+                    + "drops to the lower limit."
         if (mode === BatteryStatus.ApplyChargingThresholdsAfterFull)
             return "After each time the charger is connected, charge to 100% first, then "
                     + "keep within the limits."
@@ -332,7 +333,8 @@ Page {
         if (!chargerConnected)
             return "On battery, charger not connected"
         if (chargingState === "disabled")
-            return "Paused by limit. Running from battery until "
+            return "Paused by limit. Battery resting, phone running from the charger. "
+                    + "Charges again only if the battery drops to "
                     + battery.chargeEnableLimit + "%"
         if (chargingState === "enabled") {
             if (battery.chargingForced)
@@ -467,7 +469,7 @@ Page {
                 color: Theme.highlightColor
                 text: "mce reports that it cannot control charging on this device, so "
                       + "these settings have no effect. Check "
-                      + "/etc/mce/61-sweet-charging.ini and the input_suspend node."
+                      + "/etc/mce/61-sweet-charging.ini and the charging_enabled node."
             }
 
             SectionHeader {
@@ -552,7 +554,7 @@ Page {
                 }
 
                 // Committed on release only. Every write makes mce re-evaluate
-                // and possibly toggle input_suspend, so live updates while
+                // and possibly toggle charging_enabled, so live updates while
                 // dragging would flap the charger.
                 //
                 // The dragged value is captured as it moves because on release

@@ -1,0 +1,94 @@
+#!/bin/sh
+# sweet: apply the performance mode picked on Settings > System > Performance.
+#
+# Runs as root from sweet-performance.service, at boot and whenever the mode
+# file changes (sweet-performance.path). The settings page cannot write sysfs
+# itself: it saves the choice in dconf and starts the user unit
+# sweet-performance-request@<mode>.service, which writes the mode name to
+# /var/lib/sweet-performance/mode (group sailfish-system, see
+# usr/lib/tmpfiles.d/sweet-performance.conf). Only the three literal names
+# below are accepted; anything else means balanced, so nothing a user can put
+# in that file reaches sysfs.
+#
+# Why not mce: mce's CPU governor feature (CPUScalingGovernorDefault and
+# CPUScalingGovernorInteractive in its ini files) only knows two states, and
+# its power saving mode does not touch the CPU or GPU at all. Three modes need
+# a third state. mce is still used for what it owns: Battery saver turns on
+# mce's forced power saving mode (dimmer screen, less background work).
+#
+# The values were checked on the device (2026-11-17), with all cores online:
+#   CPU policy0 (cpu0-5, Kryo slow cores): 300000-1804800, boots at 576000-1804800
+#   CPU policy6 (cpu6-7, Kryo fast cores): 300000-2304000, boots at 652800-2304000
+#   GPU kgsl-3d0 power levels: 0=800 1=650 2=565 3=430 4=355 5=267 6=180 MHz,
+#   boots at max_pwrlevel 0 / min_pwrlevel 6
+# The governors stay as they are (schedutil, msm-adreno-tz); only the limits
+# move. thermal-engine and mi_thermald still apply their own caps on top, so
+# no mode can overheat the phone.
+#
+# In charge-only mode (actdead) Sailfish turns cores 1-7 off and their writes
+# fail; this unit is only wanted by multi-user.target, so it does not run there.
+#
+# Busybox ash, like every script on this phone: see tests/sweet-performance-apply.test.sh.
+
+ROOT=${SWEET_PERF_ROOT:-}
+MODE_FILE=${SWEET_PERF_MODE_FILE:-/var/lib/sweet-performance/mode}
+PSM_MARK=${SWEET_PERF_PSM_MARK:-/var/lib/sweet-performance/psm-forced-by-us}
+CPU=$ROOT/sys/devices/system/cpu/cpufreq
+GPU=$ROOT/sys/class/kgsl/kgsl-3d0
+
+mode=balanced
+if [ -r "$MODE_FILE" ]; then
+    read -r mode < "$MODE_FILE"
+fi
+case "$mode" in
+    performance|balanced|saver) ;;
+    *) echo "unknown mode '$mode', using balanced" >&2; mode=balanced ;;
+esac
+
+# A failed write is reported but does not stop the rest.
+put() {
+    if ! echo "$2" > "$1" 2>/dev/null; then
+        echo "could not write $2 to $1" >&2
+    fi
+}
+
+# 1. Back to the boot defaults, widest range first so no step ever asks for
+#    min > max: raise the maximums, then set the minimums.
+put "$CPU/policy0/scaling_max_freq" 1804800
+put "$CPU/policy6/scaling_max_freq" 2304000
+put "$CPU/policy0/scaling_min_freq" 576000
+put "$CPU/policy6/scaling_min_freq" 652800
+put "$GPU/max_pwrlevel" 0
+put "$GPU/min_pwrlevel" 6
+
+# 2. The mode, narrowing from there.
+case "$mode" in
+    performance)
+        # Higher floors: the cores and the GPU start from a faster clock, so
+        # the UI and games react sooner. The ceilings stay at full speed.
+        put "$CPU/policy0/scaling_min_freq" 1248000
+        put "$CPU/policy6/scaling_min_freq" 1324800
+        put "$GPU/min_pwrlevel" 3
+        ;;
+    saver)
+        # Lower ceilings: the two fast cores stop at 1.7 GHz, the slow ones at
+        # 1.5 GHz, the GPU at 565 MHz.
+        put "$CPU/policy0/scaling_max_freq" 1497600
+        put "$CPU/policy6/scaling_max_freq" 1708800
+        put "$GPU/max_pwrlevel" 2
+        ;;
+esac
+
+# 3. mce's forced power saving mode follows Battery saver. It is only turned
+#    off again if this script turned it on, so a forced mode set elsewhere
+#    (mcetool, a later Settings page) is left alone.
+if [ "$mode" = saver ]; then
+    if mcetool 2>/dev/null | grep -q "^Forced power saving mode: *disabled"; then
+        mcetool --set-forced-psm=enabled && : > "$PSM_MARK"
+    fi
+elif [ -e "$PSM_MARK" ]; then
+    mcetool --set-forced-psm=disabled
+    rm -f "$PSM_MARK"
+fi
+
+echo "performance mode: $mode"

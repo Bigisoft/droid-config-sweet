@@ -1,0 +1,14 @@
+{
+    "entries": [
+        {
+            "path": "system_settings/system/sweet_performance",
+            "title": "Performance",
+            "type": "page",
+            "icon": "image://theme/icon-m-developer-mode",
+            "order": 272,
+            "params": {
+                "source": "/usr/share/jolla-settings/pages/sweet-performance/PerformanceMode.qml"
+            }
+        }
+    ]
+}

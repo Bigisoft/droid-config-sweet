@@ -1,0 +1,10 @@
+[Unit]
+Description=sweet: watch for a new performance mode from Settings
+Documentation=file:///usr/bin/droid/sweet-performance-apply
+
+[Path]
+PathChanged=/var/lib/sweet-performance/mode
+Unit=sweet-performance.service
+
+[Install]
+WantedBy=multi-user.target

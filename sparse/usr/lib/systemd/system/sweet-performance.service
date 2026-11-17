@@ -1,0 +1,11 @@
+[Unit]
+Description=sweet: apply the Performance / Balanced / Battery saver mode
+Documentation=file:///usr/bin/droid/sweet-performance-apply
+After=mce.service systemd-tmpfiles-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/droid/sweet-performance-apply
+
+[Install]
+WantedBy=multi-user.target

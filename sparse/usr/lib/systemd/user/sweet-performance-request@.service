@@ -1,0 +1,7 @@
+[Unit]
+Description=sweet: request performance mode %i
+Documentation=file:///usr/bin/droid/sweet-performance-request
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/droid/sweet-performance-request %i

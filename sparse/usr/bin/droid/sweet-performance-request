@@ -1,0 +1,14 @@
+#!/bin/sh
+# sweet: hand a performance mode from the settings page to the root side.
+#
+# Runs as the user from sweet-performance-request@<mode>.service, which the
+# Performance page in Settings starts over the session bus. Writes the mode
+# name to /var/lib/sweet-performance/mode; sweet-performance.path sees the
+# change and runs sweet-performance-apply as root. See that script for why it
+# is split this way.
+MODE_FILE=${SWEET_PERF_MODE_FILE:-/var/lib/sweet-performance/mode}
+case "$1" in
+    performance|balanced|saver) ;;
+    *) echo "usage: $0 performance|balanced|saver" >&2; exit 2 ;;
+esac
+echo "$1" > "$MODE_FILE"

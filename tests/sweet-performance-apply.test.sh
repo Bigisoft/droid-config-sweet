@@ -81,10 +81,22 @@ echo "garbage in the mode file"
 run 'saver; rm -rf /'
 check "treated as balanced" '[ "$(state)" = "$BAL" ]'
 check "says so" 'grep -q "using balanced" $T/out'
+check "does not echo the content" '! grep -q "rm -rf" $T/out'
+
+echo "mode file is a symlink"
+echo "performance" > $T/elsewhere; ln -sf $T/elsewhere $T/mode
+$SHELL_UNDER_TEST "$SCRIPT" > $T/out 2>&1
+check "symlink not followed, balanced" '[ "$(state)" = "$BAL" ]'
+rm -f $T/mode
 
 echo "missing mode file"
 rm -f $T/mode; $SHELL_UNDER_TEST "$SCRIPT" > $T/out 2>&1
 check "balanced" '[ "$(state)" = "$BAL" ]'
+
+echo "mode file is a directory"
+mkdir $T/mode; $SHELL_UNDER_TEST "$SCRIPT" > $T/out 2>&1
+check "balanced" '[ "$(state)" = "$BAL" ]'
+rmdir $T/mode
 
 echo "unwritable file does not stop the rest"
 rm -f $G/max_pwrlevel; mkdir $G/max_pwrlevel

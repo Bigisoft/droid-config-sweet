@@ -32,17 +32,23 @@
 
 ROOT=${SWEET_PERF_ROOT:-}
 MODE_FILE=${SWEET_PERF_MODE_FILE:-/var/lib/sweet-performance/mode}
-PSM_MARK=${SWEET_PERF_PSM_MARK:-/var/lib/sweet-performance/psm-forced-by-us}
+# Root's own state lives apart from the user-writable mode directory, in a
+# directory only root can write (usr/lib/tmpfiles.d/sweet-performance.conf).
+# Kept there, a user cannot plant a symlink for root to write through.
+PSM_MARK=${SWEET_PERF_PSM_MARK:-/var/lib/sweet-performance-state/psm-forced-by-us}
 CPU=$ROOT/sys/devices/system/cpu/cpufreq
 GPU=$ROOT/sys/class/kgsl/kgsl-3d0
 
+# The mode file is user-controlled: only a regular file, never a symlink, is
+# read, and what it held is never logged, so it cannot be used to make root
+# read some other file into the journal.
 mode=balanced
-if [ -r "$MODE_FILE" ]; then
+if [ -f "$MODE_FILE" ] && [ ! -L "$MODE_FILE" ]; then
     read -r mode < "$MODE_FILE"
 fi
 case "$mode" in
     performance|balanced|saver) ;;
-    *) echo "unknown mode '$mode', using balanced" >&2; mode=balanced ;;
+    *) echo "mode file holds no known mode, using balanced" >&2; mode=balanced ;;
 esac
 
 # A failed write is reported but does not stop the rest.

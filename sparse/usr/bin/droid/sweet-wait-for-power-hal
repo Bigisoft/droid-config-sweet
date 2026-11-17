@@ -33,8 +33,11 @@ hal_initialised() {
 i=0
 while [ "$i" -lt "$TIMEOUT" ]; do
     if hal_registered && hal_initialised; then
-        # At runtime this is long over; only wait the first time after boot.
-        [ "$(cut -d. -f1 /proc/uptime)" -lt 180 ] && sleep "$SETTLE"
+        # Settle only if the HAL came up while we watched (at boot), so the
+        # HintManager's reset is surely done. If it was already up at the
+        # first look, the reset is long over: return at once, so a mode
+        # picked in Settings applies without a delay.
+        [ "$i" -gt 0 ] && sleep "$SETTLE"
         exit 0
     fi
     i=$((i + 2))

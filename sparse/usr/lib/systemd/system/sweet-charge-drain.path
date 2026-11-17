@@ -1,0 +1,12 @@
+[Unit]
+Description=sweet: watch for a battery drain request from the calibration
+Documentation=file:///usr/bin/droid/sweet-charge-drain
+After=sweet-charge-drain-boot.service
+StartLimitIntervalSec=0
+
+[Path]
+PathChanged=/var/lib/sweet-charge-drain/request
+Unit=sweet-charge-drain.service
+
+[Install]
+WantedBy=multi-user.target

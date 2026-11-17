@@ -1,0 +1,150 @@
+#!/bin/sh
+# sweet: run the phone from the battery on purpose, for a calibration drain.
+#
+# Runs as root from sweet-charge-drain.service, which sweet-charge-drain.path
+# starts whenever /var/lib/sweet-charge-drain/request changes.
+#
+# Why it exists: mce pauses charging through charging_enabled
+# (etc/mce/61-sweet-charging.ini), which holds the battery idle while the
+# charger powers the phone. That is what a phone left plugged in wants, but
+# the server-profile drain of the automatic calibration
+# (sweet-charge-calibration, run as the user) needs the opposite: the battery
+# has to run down to about 12% with the cable attached, so the fuel gauge can
+# relearn the capacity on the charge that follows. The user cannot write
+# sysfs, so the calibration writes the literal word "on" or "off" to the
+# request file (group sailfish-system, see
+# usr/lib/tmpfiles.d/sweet-charge-drain.conf), and this script, while the
+# request is "on", holds input_suspend=1: the charger input is cut and the
+# phone runs from the battery. Otherwise it writes input_suspend=0.
+#
+# Safety rules. input_suspend is released (0), and the service ends, when:
+#  - the request is anything but "on", or the file is missing, a symlink or
+#    not a regular file. At most 16 bytes of it are read and what it held is
+#    never logged;
+#  - battery/capacity is 10% or lower, or cannot be read;
+#  - the drain has been held for 7 days;
+#  - the service stops for any reason (trap here, and ExecStopPost);
+#  - the phone boots (sweet-charge-drain-boot.service runs this with --boot,
+#    which also deletes the request, so a drain never survives a reboot).
+# After a release for low battery or for the 7 days, a request that still
+# says "on" is not held again; the request has to go to something else first.
+# Capacity is read once a minute, no more.
+#
+# Root's own state (when the drain started, whether it was released for good)
+# lives in /run/sweet-charge-drain (RuntimeDirectory= of the service, 0700),
+# not in the user-writable request directory, and is gone after a reboot.
+#
+# Busybox ash, like every script on this phone: see tests/sweet-charge-drain.test.sh.
+#
+# Usage: sweet-charge-drain           hold while requested, once a minute
+#        sweet-charge-drain --step    one check, exit 0 if still holding
+#        sweet-charge-drain --release release only (ExecStopPost)
+#        sweet-charge-drain --boot    release and forget any request (boot)
+
+PSY=${SWEET_DRAIN_PSY:-/sys/class/power_supply/battery}
+REQUEST=${SWEET_DRAIN_REQUEST:-/var/lib/sweet-charge-drain/request}
+STATE=${SWEET_DRAIN_STATE:-/run/sweet-charge-drain}
+MIN_CAPACITY=10
+MAX_SECONDS=$((7 * 86400))
+POLL=60
+
+log() { echo "sweet-charge-drain: $*"; }
+
+put() {
+    if ! echo "$1" > "$PSY/input_suspend" 2>/dev/null; then
+        log "could not write $1 to $PSY/input_suspend"
+        return 1
+    fi
+}
+
+release() { put 0; }
+
+# Only a regular file, never a symlink, at most 16 bytes. A symlink swapped
+# in after the check only makes root compare 16 bytes of some other file
+# against one word.
+requested() {
+    r=
+    if [ -f "$REQUEST" ] && [ ! -L "$REQUEST" ]; then
+        r=$(head -c 16 "$REQUEST" 2>/dev/null)
+    fi
+    [ "$r" = on ]
+}
+
+# Released for good until the request goes to something other than "on".
+latch() {
+    : > "$STATE/released" || log "could not write $STATE/released"
+    release
+    log "$1, input_suspend released until the next request"
+}
+
+# One check. Returns 0 while the drain is held, 1 once it is released.
+step() {
+    now=${SWEET_DRAIN_NOW:-$(date +%s)}
+    if ! requested; then
+        rm -f "$STATE/started" "$STATE/released"
+        release
+        log "no drain requested, input_suspend released"
+        return 1
+    fi
+    if [ -e "$STATE/released" ]; then
+        release
+        return 1
+    fi
+    if [ ! -f "$STATE/started" ]; then
+        echo "$now" > "$STATE/started" || { latch "cannot keep state"; return 1; }
+    fi
+    started=$(head -c 16 "$STATE/started" 2>/dev/null)
+    case "$started" in
+    '' | *[!0-9]*) latch "bad state"; return 1 ;;
+    esac
+    if [ $((now - started)) -ge $MAX_SECONDS ]; then
+        latch "drain held for 7 days"
+        return 1
+    fi
+    capacity=$(head -c 8 "$PSY/capacity" 2>/dev/null)
+    case "$capacity" in
+    '' | *[!0-9]*) latch "cannot read battery capacity"; return 1 ;;
+    esac
+    if [ "$capacity" -le $MIN_CAPACITY ]; then
+        latch "battery at $capacity%"
+        return 1
+    fi
+    if [ "$(head -c 8 "$PSY/input_suspend" 2>/dev/null)" != 1 ]; then
+        put 1 || { latch "cannot hold"; return 1; }
+        log "draining from $capacity%: input_suspend held"
+    fi
+    return 0
+}
+
+mkdir -p "$STATE" 2>/dev/null
+
+case "$1" in
+--release)
+    release
+    exit 0
+    ;;
+--boot)
+    # rm unlinks the name only, so nothing a user puts there is followed.
+    rm -f "$REQUEST" "$STATE/started" "$STATE/released"
+    release
+    log "boot: input_suspend released, any drain request dropped"
+    exit 0
+    ;;
+--step)
+    step
+    exit $?
+    ;;
+'') ;;
+*)
+    echo "usage: $0 [--step|--release|--boot]" >&2
+    exit 2
+    ;;
+esac
+
+trap 'release; exit 0' TERM INT HUP
+while step; do
+    # In the background so the trap runs at once on stop.
+    sleep $POLL &
+    wait $!
+done
+exit 0

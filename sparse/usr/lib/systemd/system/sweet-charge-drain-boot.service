@@ -1,0 +1,21 @@
+[Unit]
+Description=sweet: never let a calibration drain survive a reboot
+Documentation=file:///usr/bin/droid/sweet-charge-drain
+# Early, without the default dependencies: sweet-charge-drain.path is ordered
+# after this unit and, like every path unit, before paths.target, which comes
+# before basic.target. With the defaults (After=basic.target) that would be an
+# ordering cycle.
+DefaultDependencies=no
+After=local-fs.target systemd-tmpfiles-setup.service
+Before=sweet-charge-drain.path sweet-charge-drain.service shutdown.target
+Conflicts=shutdown.target
+StartLimitIntervalSec=0
+
+# Writes input_suspend=0 and deletes a leftover request, so the drain only
+# starts again when the calibration asks for it after this boot.
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/droid/sweet-charge-drain --boot
+
+[Install]
+WantedBy=multi-user.target

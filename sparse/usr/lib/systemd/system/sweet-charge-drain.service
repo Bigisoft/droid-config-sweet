@@ -1,0 +1,21 @@
+[Unit]
+Description=sweet: run from the battery while a calibration drain is requested
+Documentation=file:///usr/bin/droid/sweet-charge-drain
+After=sweet-charge-drain-boot.service systemd-tmpfiles-setup.service
+# Sailfish's system.conf allows only 3 starts in 180 s by default; a request
+# must never be dropped, least of all an "off".
+StartLimitIntervalSec=0
+
+# Started only by sweet-charge-drain.path. Holds input_suspend=1 while the
+# request says "on", checks once a minute, and ends after releasing it.
+[Service]
+Type=simple
+# Root's state, outside the user-writable request directory. Kept while the
+# service is stopped so the 7 day limit holds across restarts, and gone after
+# a reboot like everything in /run.
+RuntimeDirectory=sweet-charge-drain
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/bin/droid/sweet-charge-drain
+# Whatever ends the service (stop, crash, kill), the charger input comes back.
+ExecStopPost=/usr/bin/droid/sweet-charge-drain --release

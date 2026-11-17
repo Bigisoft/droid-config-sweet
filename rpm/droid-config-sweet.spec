@@ -62,15 +62,18 @@ Provides: ofono-configs
 %define __requires_exclude_from ^(%{_libexecdir}/droid-hybris|/var/lib/waydroid/overlay)/.*$
 %define __provides_exclude_from ^(%{_libexecdir}/droid-hybris|/var/lib/waydroid/overlay)/.*$
 
-# Performance page (sweet-performance-*): droid-configs.inc's %post neither runs
+# Performance page (sweet-performance-*) and calibration drain
+# (sweet-charge-drain*): droid-configs.inc's %post neither runs
 # systemd-tmpfiles nor reloads systemd, so after an install without a reboot the
-# mode directory would be missing and the new units unknown. Do both, and start
-# the path unit if systemd is running (it is not inside an image build).
+# request directories would be missing and the new units unknown. Do both, and
+# start the path units if systemd is running (it is not inside an image build).
 %define additional_post_scripts \
 systemd-tmpfiles --create /usr/lib/tmpfiles.d/sweet-performance.conf >/dev/null 2>&1 || : \
+systemd-tmpfiles --create /usr/lib/tmpfiles.d/sweet-charge-drain.conf >/dev/null 2>&1 || : \
 if [ -d /run/systemd/system ]; then \
     systemctl daemon-reload >/dev/null 2>&1 || : \
     systemctl start sweet-performance.path >/dev/null 2>&1 || : \
+    systemctl start sweet-charge-drain.path >/dev/null 2>&1 || : \
     systemctl --no-block start sweet-performance.service >/dev/null 2>&1 || : \
 fi
 

@@ -23,6 +23,19 @@
 #  - anything else: charge to "Full" the next time the charger is in. No drain,
 #    so a phone plugged in overnight is never left short in the morning.
 #
+# The drain has to be asked for. mce pauses charging through charging_enabled
+# (etc/mce/61-sweet-charging.ini), which holds the battery idle while the
+# charger runs the phone, so a paused phone no longer drains by itself. This
+# script runs as the user and cannot write sysfs, so for the drain it writes
+# "on" to /var/lib/sweet-charge-drain/request, and the root helper
+# sweet-charge-drain cuts the charger input (input_suspend=1) until the
+# request changes. It writes "off" when the drain ends, is stopped (from here
+# or from the Settings page), is postponed or times out, and before charging
+# to Full. The root side has its own limits (10%, 7 days, reboot); see that
+# script. During the drain mce stays in apply-thresholds at 12-14%, which
+# does not fight it: mce only pauses (charging_enabled=0) above 14%, and if
+# the root side lets go early, mce charges back to 14% at most.
+#
 # mce's own "charge to 100% this time" override is not used for the final
 # stretch: mce ends it as soon as the displayed level reads 100, which can be
 # before the charger terminates, and interrupting the charge aborts learning.
@@ -37,6 +50,7 @@
 K=/desktop/sweet/charging
 # Overridable only so the phases can be tested off-device.
 PSY=${SWEET_CALIBRATION_PSY:-/sys/class/power_supply/battery}
+DRAIN_REQUEST=${SWEET_CALIBRATION_DRAIN_REQUEST:-/var/lib/sweet-charge-drain/request}
 
 # Learning window is 10-15%; resume at 12 so charging starts inside it, and
 # let mce pause again at 14 in case this script is not around at that moment.
@@ -67,6 +81,36 @@ get() {
 }
 put_str() { dconf write "$K/$1" "'$2'"; }
 put_int() { dconf write "$K/$1" "$2"; }
+
+# The drain request for sweet-charge-drain (root). Written to a temp file and
+# renamed over the old one: atomic for the reader, and it works whoever wrote
+# the previous file (the directory is group writable, the file need not be).
+drain_request() {
+    local tmp
+    tmp="$DRAIN_REQUEST.$$"
+    if (umask 002 && echo "$1" > "$tmp") 2>/dev/null && mv -f "$tmp" "$DRAIN_REQUEST" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$tmp"
+    log "could not write drain request $1 to $DRAIN_REQUEST"
+    return 1
+}
+drain_requested() {
+    [ -f "$DRAIN_REQUEST" ] && [ ! -L "$DRAIN_REQUEST" ] \
+        && [ "$(head -c 16 "$DRAIN_REQUEST" 2>/dev/null)" = on ]
+}
+# Only writes when a drain is requested, so it can run on every check.
+drain_off() {
+    if drain_requested; then
+        drain_request off && log "drain request off"
+    fi
+}
+
+# Outside the drain phase no drain is ever wanted. This also ends one that
+# was stopped on the Settings page (which clears the phase itself) or by a
+# profile change there, at the next check.
+phase=$(get calibration_phase)
+[ "$phase" = drain ] || drain_off
 
 # Overridable only for tests: busybox runs its own date applet before any
 # stub on PATH, so a fake clock has to come in this way.
@@ -162,7 +206,6 @@ if [ -z "$next" ]; then
     next=$((now + 86400))
     put_int calibration_next "$next"
 fi
-phase=$(get calibration_phase)
 started=$(get calibration_started)
 [ -z "$started" ] && started=$now
 
@@ -195,11 +238,17 @@ case "$phase" in
             mcetool --set-charging-mode=enable
             put_str calibration_phase charge
             log "started at $capacity%, already low enough: charging to full"
-        else
+        elif drain_request on; then
             set_limits $DRAIN_RESUME $DRAIN_PAUSE
             mcetool --set-charging-mode=apply-thresholds
             put_str calibration_phase drain
             log "started at $capacity%: draining to $DRAIN_RESUME%"
+        else
+            # Without the root helper the battery would only rest: calibrate
+            # the gauge's percentage at least.
+            mcetool --set-charging-mode=enable
+            put_str calibration_phase charge
+            log "started at $capacity%, cannot drain: charging to full"
         fi
         ;;
     *)
@@ -214,15 +263,25 @@ drain)
         # Taken off the charger: a drain now would just be an ordinary
         # discharge. Put things back and try again when it is plugged in.
         log "charger removed while draining, postponing"
+        drain_off
         restore
         exit 0
     fi
     if [ "$capacity" -le "$DRAIN_PAUSE" ]; then
+        drain_off
         mcetool --set-charging-mode=enable
         put_str calibration_phase charge
         log "reached $capacity%: charging to full"
     elif [ $((now - started)) -gt $DRAIN_TIMEOUT ]; then
         log "drain did not finish in 7 days, giving up until next interval"
+        drain_off
+        restore
+        postpone
+    elif ! drain_requested; then
+        # The phone rebooted (the root side drops the request at boot, so a
+        # drain never outlives a reboot) or the request was removed. The
+        # battery only rests now; give up rather than wait out the 7 days.
+        log "drain request gone (reboot?), giving up until next interval"
         restore
         postpone
     fi

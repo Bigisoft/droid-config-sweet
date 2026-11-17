@@ -1,23 +1,45 @@
 #!/bin/sh
-# sweet: wait until Android's power HAL has finished starting, bounded.
+# sweet: wait until Android's power HAL has applied its own CPU limits, bounded.
 #
-# android.hardware.power-service.lineage-libperfmgr resets the CPU frequency
-# limits in /vendor/etc/powerhint.json (ResetOnInit) while it starts, before it
-# registers android.hardware.power.IPower/default on /dev/binder. Run before
-# sweet-performance-apply so the chosen mode lands after that reset rather than
-# being undone by it a second after boot. Same approach as wait_for_keymint:
-# binder-list from libgbinder-tools, and give up rather than hang.
-TIMEOUT=${WAIT_FOR_POWER_HAL_TIMEOUT:-30}
+# android.hardware.power-service.lineage-libperfmgr starts at about 9 s and
+# registers android.hardware.power.IPower/default, but it only starts its
+# HintManager, which resets the cpufreq limits in /vendor/etc/powerhint.json
+# (ResetOnInit), once vendor.powerhal.init is 1. That property is set by the
+# last line of /vendor/bin/init.qcom.post_boot.sh, which ran at about 32 s on
+# this phone (2026-11-17: performance floors applied at 10.2 s were back at
+# 576000 / 652800 by 42 s). So wait for both, then give the HintManager a
+# moment, and only then let sweet-performance-apply write the mode.
+#
+# Same approach as wait_for_keymint: binder-list from libgbinder-tools, and
+# give up rather than hang. getprop (hybris) prints the value and then aborts
+# in its linker on this port ("unregister_tls_module CHECK ... failed"), so
+# only its output is used, never its status. The shell that reaps it would
+# log "Aborted (core dumped)" to the journal on every poll, so that subshell's
+# stderr goes to /dev/null, and the property is only polled every 2 s once the
+# HAL is up. (rich-core-dumper is still invoked per abort but stores nothing
+# while its privacy notice is not accepted.)
+TIMEOUT=${WAIT_FOR_POWER_HAL_TIMEOUT:-120}
+SETTLE=${WAIT_FOR_POWER_HAL_SETTLE:-3}
+
+hal_registered() {
+    binder-list -d /dev/binder 2>/dev/null \
+        | grep -q "android.hardware.power.IPower/default"
+}
+
+hal_initialised() {
+    [ "$(exec 2>/dev/null; getprop vendor.powerhal.init | head -n 1; :)" = 1 ]
+}
 
 i=0
 while [ "$i" -lt "$TIMEOUT" ]; do
-    if binder-list -d /dev/binder 2>/dev/null \
-         | grep -q "android.hardware.power.IPower/default"; then
+    if hal_registered && hal_initialised; then
+        # At runtime this is long over; only wait the first time after boot.
+        [ "$(cut -d. -f1 /proc/uptime)" -lt 180 ] && sleep "$SETTLE"
         exit 0
     fi
-    i=$((i + 1))
-    sleep 1
+    i=$((i + 2))
+    sleep 2
 done
 
-echo "sweet-wait-for-power-hal: no IPower after ${TIMEOUT}s, applying anyway" >&2
+echo "sweet-wait-for-power-hal: power HAL not initialised after ${TIMEOUT}s, applying anyway" >&2
 exit 0

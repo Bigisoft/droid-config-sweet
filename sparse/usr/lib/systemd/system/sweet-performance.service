@@ -6,14 +6,16 @@ After=mce.service systemd-tmpfiles-setup.service droid-hal-init.service
 # trying the modes one after the other must never be dropped.
 StartLimitIntervalSec=0
 
+# Not started by multi-user.target directly: at boot it would run before the
+# power HAL resets the CPU limits (see sweet-wait-for-power-hal).
+# sweet-performance-boot.service starts it at the right moment, and
+# sweet-performance.path whenever the mode changes.
 [Service]
 Type=oneshot
 StateDirectory=sweet-performance-state
 StateDirectoryMode=0700
-# The power HAL resets the CPU limits while it starts: wait for it first.
+# Returns at once after boot; only waits if a change comes in before the
+# power HAL has finished starting.
 ExecStartPre=/usr/bin/droid/sweet-wait-for-power-hal
 ExecStart=/usr/bin/droid/sweet-performance-apply
-TimeoutStartSec=60
-
-[Install]
-WantedBy=multi-user.target
+TimeoutStartSec=180

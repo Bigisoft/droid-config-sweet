@@ -71,6 +71,7 @@ systemd-tmpfiles --create /usr/lib/tmpfiles.d/sweet-performance.conf >/dev/null 
 if [ -d /run/systemd/system ]; then \
     systemctl daemon-reload >/dev/null 2>&1 || : \
     systemctl start sweet-performance.path >/dev/null 2>&1 || : \
+    systemctl --no-block start sweet-performance.service >/dev/null 2>&1 || : \
 fi
 
 %include droid-configs-device/droid-configs.inc

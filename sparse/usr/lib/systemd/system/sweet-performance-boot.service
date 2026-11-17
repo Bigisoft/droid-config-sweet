@@ -1,0 +1,14 @@
+[Unit]
+Description=sweet: apply the performance mode once the power HAL has started
+Documentation=file:///usr/bin/droid/sweet-wait-for-power-hal
+After=droid-hal-init.service
+
+# Waits about 30 s at boot (until init.qcom.post_boot.sh has let the power HAL
+# reset the CPU limits), so it is Type=simple: nothing in the boot waits for
+# it. It then queues sweet-performance.service, which does the work.
+[Service]
+Type=simple
+ExecStart=/bin/sh -c '/usr/bin/droid/sweet-wait-for-power-hal; exec systemctl --no-block start sweet-performance.service'
+
+[Install]
+WantedBy=multi-user.target

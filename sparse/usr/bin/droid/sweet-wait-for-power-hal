@@ -1,0 +1,23 @@
+#!/bin/sh
+# sweet: wait until Android's power HAL has finished starting, bounded.
+#
+# android.hardware.power-service.lineage-libperfmgr resets the CPU frequency
+# limits in /vendor/etc/powerhint.json (ResetOnInit) while it starts, before it
+# registers android.hardware.power.IPower/default on /dev/binder. Run before
+# sweet-performance-apply so the chosen mode lands after that reset rather than
+# being undone by it a second after boot. Same approach as wait_for_keymint:
+# binder-list from libgbinder-tools, and give up rather than hang.
+TIMEOUT=${WAIT_FOR_POWER_HAL_TIMEOUT:-30}
+
+i=0
+while [ "$i" -lt "$TIMEOUT" ]; do
+    if binder-list -d /dev/binder 2>/dev/null \
+         | grep -q "android.hardware.power.IPower/default"; then
+        exit 0
+    fi
+    i=$((i + 1))
+    sleep 1
+done
+
+echo "sweet-wait-for-power-hal: no IPower after ${TIMEOUT}s, applying anyway" >&2
+exit 0

@@ -8,17 +8,31 @@
 # /var/lib/sweet-performance/mode (group sailfish-system, see
 # usr/lib/tmpfiles.d/sweet-performance.conf). Only the three literal names
 # below are accepted; anything else means balanced, so nothing a user can put
-# in that file reaches sysfs.
+# in that file reaches sysfs. What was really applied is published in
+# /run/sweet-performance-applied, which the page reads back.
 #
 # Why not mce: mce's CPU governor feature (CPUScalingGovernorDefault and
 # CPUScalingGovernorInteractive in its ini files) only knows two states, and
 # its power saving mode does not touch the CPU or GPU at all. Three modes need
 # a third state. mce is still used for what it owns: Battery saver turns on
-# mce's forced power saving mode (dimmer screen, less background work).
+# mce's forced power saving mode (dimmer screen, less background work). mce
+# itself ends that mode at the next charger connect (powersavemode.c,
+# "Disable forced-psm on charger connect"), as the stock Battery page says;
+# the CPU and GPU caps stay.
 #
-# The values were checked on the device (2026-11-17), with all cores online:
-#   CPU policy0 (cpu0-5, Kryo slow cores): 300000-1804800, boots at 576000-1804800
-#   CPU policy6 (cpu6-7, Kryo fast cores): 300000-2304000, boots at 652800-2304000
+# The CPU limit files are shared with Android's power HAL
+# (android.hardware.power-service.lineage-libperfmgr, /vendor/etc/powerhint.json),
+# which resets them to its own defaults (576000 / 652800 min, full max) when it
+# starts. The 576000 / 652800 "boot defaults" below are its values, not the
+# kernel's (cpuinfo_min_freq is 300000). The service therefore waits for the
+# HAL to register (sweet-wait-for-power-hal) before this runs, or its reset
+# would undo the mode a second after boot. The GPU pwrlevel files are not in
+# its config.
+#
+# Values checked on the device (2026-11-17), with all cores online; every
+# frequency used is in that cluster's scaling_available_frequencies:
+#   CPU policy0 (cpu0-5, slow cores): 300000-1804800
+#   CPU policy6 (cpu6-7, fast cores): 300000-2304000
 #   GPU kgsl-3d0 power levels: 0=800 1=650 2=565 3=430 4=355 5=267 6=180 MHz,
 #   boots at max_pwrlevel 0 / min_pwrlevel 6
 # The governors stay as they are (schedutil, msm-adreno-tz); only the limits
@@ -32,24 +46,29 @@
 
 ROOT=${SWEET_PERF_ROOT:-}
 MODE_FILE=${SWEET_PERF_MODE_FILE:-/var/lib/sweet-performance/mode}
-# Root's own state lives apart from the user-writable mode directory, in a
-# directory only root can write (usr/lib/tmpfiles.d/sweet-performance.conf).
-# Kept there, a user cannot plant a symlink for root to write through.
+# Root's own state lives apart from the user-writable mode directory, in
+# /var/lib/sweet-performance-state (StateDirectory= of the service, 0700), so a
+# user cannot plant a symlink there for root to write through.
 PSM_MARK=${SWEET_PERF_PSM_MARK:-/var/lib/sweet-performance-state/psm-forced-by-us}
+APPLIED=${SWEET_PERF_APPLIED:-/run/sweet-performance-applied}
 CPU=$ROOT/sys/devices/system/cpu/cpufreq
 GPU=$ROOT/sys/class/kgsl/kgsl-3d0
 
 # The mode file is user-controlled: only a regular file, never a symlink, is
-# read, and what it held is never logged, so it cannot be used to make root
-# read some other file into the journal.
-mode=balanced
-if [ -f "$MODE_FILE" ] && [ ! -L "$MODE_FILE" ]; then
-    read -r mode < "$MODE_FILE"
-fi
-case "$mode" in
-    performance|balanced|saver) ;;
-    *) echo "mode file holds no known mode, using balanced" >&2; mode=balanced ;;
-esac
+# read, at most 16 bytes of it, and what it held is never logged. A symlink
+# swapped in after the check only makes root compare 16 bytes of some other
+# file against three words.
+read_mode() {
+    m=
+    if [ -f "$MODE_FILE" ] && [ ! -L "$MODE_FILE" ]; then
+        m=$(head -c 16 "$MODE_FILE" 2>/dev/null)
+    fi
+    case "$m" in
+        performance|balanced|saver) echo "$m" ;;
+        "") echo balanced ;;
+        *) echo "mode file holds no known mode, using balanced" >&2; echo balanced ;;
+    esac
+}
 
 # A failed write is reported but does not stop the rest.
 put() {
@@ -58,43 +77,71 @@ put() {
     fi
 }
 
-# 1. Back to the boot defaults, widest range first so no step ever asks for
-#    min > max: raise the maximums, then set the minimums.
-put "$CPU/policy0/scaling_max_freq" 1804800
-put "$CPU/policy6/scaling_max_freq" 2304000
-put "$CPU/policy0/scaling_min_freq" 576000
-put "$CPU/policy6/scaling_min_freq" 652800
-put "$GPU/max_pwrlevel" 0
-put "$GPU/min_pwrlevel" 6
+forced_psm_on() {
+    mcetool 2>/dev/null | grep -q "^Forced power saving mode: *enabled"
+}
 
-# 2. The mode, narrowing from there.
-case "$mode" in
-    performance)
-        # Higher floors: the cores and the GPU start from a faster clock, so
-        # the UI and games react sooner. The ceilings stay at full speed.
-        put "$CPU/policy0/scaling_min_freq" 1248000
-        put "$CPU/policy6/scaling_min_freq" 1324800
-        put "$GPU/min_pwrlevel" 3
-        ;;
-    saver)
-        # Lower ceilings: the two fast cores stop at 1.7 GHz, the slow ones at
-        # 1.5 GHz, the GPU at 565 MHz.
-        put "$CPU/policy0/scaling_max_freq" 1497600
-        put "$CPU/policy6/scaling_max_freq" 1708800
-        put "$GPU/max_pwrlevel" 2
-        ;;
-esac
+apply() {
+    # 1. Back to the defaults, widest range first so no step ever asks for
+    #    min > max: raise the maximums, then set the minimums.
+    put "$CPU/policy0/scaling_max_freq" 1804800
+    put "$CPU/policy6/scaling_max_freq" 2304000
+    put "$CPU/policy0/scaling_min_freq" 576000
+    put "$CPU/policy6/scaling_min_freq" 652800
+    put "$GPU/max_pwrlevel" 0
+    put "$GPU/min_pwrlevel" 6
 
-# 3. mce's forced power saving mode follows Battery saver. It is only turned
-#    off again if this script turned it on, so a forced mode set elsewhere
-#    (mcetool, a later Settings page) is left alone.
-if [ "$mode" = saver ]; then
-    if mcetool 2>/dev/null | grep -q "^Forced power saving mode: *disabled"; then
-        mcetool --set-forced-psm=enabled && : > "$PSM_MARK"
+    # 2. The mode, narrowing from there.
+    case "$1" in
+        performance)
+            # Higher floors: the cores and the GPU start from a faster clock,
+            # so the UI and games react sooner. Ceilings stay at full speed.
+            put "$CPU/policy0/scaling_min_freq" 1248000
+            put "$CPU/policy6/scaling_min_freq" 1324800
+            put "$GPU/min_pwrlevel" 3
+            ;;
+        saver)
+            # Lower ceilings: fast cores stop at 1.7 GHz, slow ones at
+            # 1.5 GHz, the GPU at 565 MHz.
+            put "$CPU/policy0/scaling_max_freq" 1497600
+            put "$CPU/policy6/scaling_max_freq" 1708800
+            put "$GPU/max_pwrlevel" 2
+            ;;
+    esac
+
+    # 3. mce's forced power saving mode follows Battery saver. It is only
+    #    turned off again if this script turned it on. The mark is dropped
+    #    whenever forced mode is seen off (mce ends it on charger connect).
+    #    Left gap: if mce ended ours and the user then switched it on again on
+    #    the stock Battery page before this script next ran, leaving Battery
+    #    saver turns theirs off too. That only ever ends a power saving mode
+    #    early, it never starts one.
+    if [ "$1" = saver ]; then
+        if forced_psm_on; then
+            :
+        elif mcetool --set-forced-psm=enabled; then
+            : > "$PSM_MARK" || echo "could not write $PSM_MARK" >&2
+        fi
+    elif [ -e "$PSM_MARK" ]; then
+        if forced_psm_on; then
+            mcetool --set-forced-psm=disabled
+        fi
+        rm -f "$PSM_MARK"
     fi
-elif [ -e "$PSM_MARK" ]; then
-    mcetool --set-forced-psm=disabled
-    rm -f "$PSM_MARK"
-fi
 
-echo "performance mode: $mode"
+    echo "$1" > "$APPLIED.tmp" && mv -f "$APPLIED.tmp" "$APPLIED"
+    echo "performance mode: $1"
+}
+
+# A change written while this runs does not start the service again (the path
+# unit's start job merges into the running one), so look once more at the end
+# and go round again if the file moved on. Bounded, in case it keeps changing.
+mode=$(read_mode)
+i=0
+while [ "$i" -lt 5 ]; do
+    apply "$mode"
+    next=$(read_mode 2>/dev/null)
+    [ "$next" = "$mode" ] && break
+    mode=$next
+    i=$((i + 1))
+done

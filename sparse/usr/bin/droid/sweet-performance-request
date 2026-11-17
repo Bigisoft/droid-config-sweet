@@ -6,9 +6,15 @@
 # name to /var/lib/sweet-performance/mode; sweet-performance.path sees the
 # change and runs sweet-performance-apply as root. See that script for why it
 # is split this way.
+#
+# Written to a temp file and renamed over the old one: atomic for the reader,
+# and it works whoever wrote the previous file (the directory is group
+# writable, the file need not be).
 MODE_FILE=${SWEET_PERF_MODE_FILE:-/var/lib/sweet-performance/mode}
 case "$1" in
     performance|balanced|saver) ;;
     *) echo "usage: $0 performance|balanced|saver" >&2; exit 2 ;;
 esac
-echo "$1" > "$MODE_FILE"
+umask 002
+tmp="$MODE_FILE.$$"
+echo "$1" > "$tmp" && mv -f "$tmp" "$MODE_FILE" || { rm -f "$tmp"; exit 1; }

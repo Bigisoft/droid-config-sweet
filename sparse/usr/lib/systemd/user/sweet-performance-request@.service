@@ -1,6 +1,8 @@
 [Unit]
 Description=sweet: request performance mode %i
 Documentation=file:///usr/bin/droid/sweet-performance-request
+# Sailfish's user.conf allows only 3 starts in 180 s by default.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

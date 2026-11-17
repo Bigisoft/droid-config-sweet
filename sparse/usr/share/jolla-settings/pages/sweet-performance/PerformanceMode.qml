@@ -13,6 +13,10 @@ import Nemo.DBus 2.0
 // saving mode. The thermal daemons keep their own caps, so no choice here can
 // overheat the phone. See /usr/bin/droid/sweet-performance-apply for the
 // values and why it works this way.
+//
+// What the phone really runs is read back from /run/sweet-performance-applied,
+// written by the root side, so a change that did not take is visible here
+// instead of the page just repeating the saved choice.
 Page {
     id: page
 
@@ -35,10 +39,15 @@ Page {
             key: "saver",
             name: "Battery saver",
             description: "Caps the processor and graphics speed and turns on power "
-                         + "saving mode (dimmer screen, less background activity). Turning "
-                         + "it off again also ends power saving mode."
+                         + "saving mode (dimmer screen, less background activity) until "
+                         + "the charger is next connected. The speed caps stay until you "
+                         + "pick another mode."
         }
     ]
+
+    // "" until read; otherwise the mode the root side last applied.
+    property string applied: ""
+    property bool requestFailed: false
 
     ConfigurationValue {
         id: modeSetting
@@ -62,13 +71,58 @@ Page {
         return 1
     }
 
+    function nameOf(key) {
+        var i = indexOf(key)
+        return modes[i].key === key ? modes[i].name : key
+    }
+
+    function readApplied() {
+        var xhr = new XMLHttpRequest()
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === XMLHttpRequest.DONE)
+                page.applied = String(xhr.responseText).trim()
+        }
+        xhr.open("GET", "file:///run/sweet-performance-applied")
+        xhr.send()
+    }
+
     function select(index) {
         var key = modes[index].key
         modeSetting.value = key
+        requestFailed = false
         systemdManager.typedCall("StartUnit",
                                  [{ "type": "s", "value": "sweet-performance-request@" + key + ".service" },
-                                  { "type": "s", "value": "replace" }])
+                                  { "type": "s", "value": "replace" }],
+                                 function () { recheck.restart() },
+                                 function () { page.requestFailed = true })
     }
+
+    function statusText() {
+        if (requestFailed)
+            return "Could not pass the mode on to the system. Try again."
+        if (applied === "")
+            return ""
+        if (applied === modeSetting.value)
+            return "Active: " + nameOf(applied)
+        return "Still active: " + nameOf(applied) + ". The change has not been applied yet."
+    }
+
+    // The root side runs a moment after the request; look again a few times.
+    Timer {
+        id: recheck
+        interval: 700
+        repeat: true
+        property int count: 0
+        onRunningChanged: if (running) count = 0
+        onTriggered: {
+            page.readApplied()
+            count++
+            if (count >= 6 || page.applied === modeSetting.value)
+                stop()
+        }
+    }
+
+    onStatusChanged: if (status === PageStatus.Active) readApplied()
 
     SilicaFlickable {
         anchors.fill: parent
@@ -85,7 +139,6 @@ Page {
             ComboBox {
                 id: modeBox
                 label: "Mode"
-                currentIndex: page.indexOf(modeSetting.value)
                 menu: ContextMenu {
                     Repeater {
                         model: page.modes
@@ -97,6 +150,15 @@ Page {
                 }
             }
 
+            // A plain currentIndex binding is replaced by ComboBox on the
+            // first pick; a Binding element keeps following the setting (as
+            // ChargingLimits.qml and the stock Battery page do).
+            Binding {
+                target: modeBox
+                property: "currentIndex"
+                value: page.indexOf(modeSetting.value)
+            }
+
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * Theme.horizontalPageMargin
@@ -104,6 +166,21 @@ Page {
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.secondaryHighlightColor
                 text: page.modes[page.indexOf(modeSetting.value)].description
+            }
+
+            Item {
+                width: 1
+                height: Theme.paddingMedium
+            }
+
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * Theme.horizontalPageMargin
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.highlightColor
+                visible: text !== ""
+                text: page.statusText()
             }
         }
     }

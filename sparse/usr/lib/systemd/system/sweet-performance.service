@@ -1,11 +1,19 @@
 [Unit]
 Description=sweet: apply the Performance / Balanced / Battery saver mode
 Documentation=file:///usr/bin/droid/sweet-performance-apply
-After=mce.service systemd-tmpfiles-setup.service
+After=mce.service systemd-tmpfiles-setup.service droid-hal-init.service
+# Sailfish's system.conf allows only 3 starts in 180 s by default; a user
+# trying the modes one after the other must never be dropped.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
+StateDirectory=sweet-performance-state
+StateDirectoryMode=0700
+# The power HAL resets the CPU limits while it starts: wait for it first.
+ExecStartPre=/usr/bin/droid/sweet-wait-for-power-hal
 ExecStart=/usr/bin/droid/sweet-performance-apply
+TimeoutStartSec=60
 
 [Install]
 WantedBy=multi-user.target
